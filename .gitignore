@@ -1,1 +1,5 @@
 /target
+
+id.json
+/node_modules
+/src/program/target/**/*

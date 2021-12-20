@@ -1,12 +1,21 @@
 {
-  "name": "learn_solana",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+    "name": "learn_solana",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "new-build:program": "rm -Rf ./src/program/target/deploy/learn_solana-keypair.json && npm run build:program",
+        "build:program": "cargo build-bpf --manifest-path=./src/program/Cargo.toml",
+        "test:program": "cargo test-bpf --manifest-path=./src/program/Cargo.toml",
+        "deploy:program": "solana program deploy --config id.json --url localhost src/program/target/deploy/learn_solana.so"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@solana/web3.js": "^1.31.0",
+        "bn.js": "^5.2.0",
+        "borsh": "^0.7.0",
+        "yaml": "^1.10.2"
+    }
 }
