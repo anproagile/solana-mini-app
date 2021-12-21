@@ -1,4 +1,4 @@
-import { AccountInfo, Connection, PublicKey, sendAndConfirmTransaction, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
+import { AccountInfo, Connection, Keypair, PublicKey, sendAndConfirmTransaction, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { deserialize, deserializeUnchecked, serialize } from 'borsh';
 import { getPayerKeypair, getProgramKeypair } from './utils';
 
@@ -53,8 +53,26 @@ const PayloadSchema = new Map([
 
 async function start() {
 	const programAccountPublicKey = await getOrcreateProgramAccountIfNotExists();
-	await test(programAccountPublicKey);
-	await printProgramAccountData(programAccountPublicKey);
+	const info = await connection.getAccountInfo(programAccountPublicKey);
+	// await test(programAccountPublicKey);
+	// await printProgramAccountData(programAccountPublicKey);
+	const payerKeyPair = getPayerKeypair();
+	const programKeyPair = getProgramKeypair();
+	const programId = programKeyPair.publicKey;
+	console.log(info?.owner.toString(), programId.toString());
+	const instruction = new TransactionInstruction({
+		keys: [
+			{ pubkey: programAccountPublicKey, isSigner: false, isWritable: true },
+			{ pubkey: programAccountPublicKey, isSigner: false, isWritable: true },
+			{ pubkey: programAccountPublicKey, isSigner: false, isWritable: true },
+		],
+		programId,
+		data: Buffer.alloc(0),
+	});
+	const transaction = new Transaction();
+	transaction.add(instruction);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
+	console.log(transactionSignature);
 }
 
 async function printProgramAccountData(programAccountPublicKey: PublicKey) {
@@ -116,9 +134,11 @@ async function getOrcreateProgramAccountIfNotExists() {
 	let programAccountInfo = await connection.getAccountInfo(programAccountPublicKey);
 
 	if (programAccountInfo === null) {
-		console.log(`Program ${programId} doesn't have account for program state, creating account for it using ${payerKeyPair.publicKey.toBase58()}`);
+		console.log(`Program ${programId} doesn't have account for program state`);
 		// Solana default max account size = 10 MB, here we put only 1 MB
-		const lamportsToExemptRent = await connection.getMinimumBalanceForRentExemption(1048576);
+		// const space = 1048576;
+		const space = 33;
+		const lamportsToExemptRent = await connection.getMinimumBalanceForRentExemption(space);
 		const transaction = new Transaction().add(
 			SystemProgram.createAccountWithSeed({
 				fromPubkey: payerKeyPair.publicKey,
@@ -126,14 +146,14 @@ async function getOrcreateProgramAccountIfNotExists() {
 				seed: PROGRAM_ACCOUNT_SEED,
 				newAccountPubkey: programAccountPublicKey,
 				lamports: lamportsToExemptRent,
-				space: 1048576,
+				space,
 				programId,
 			}),
 		);
 		const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
-		console.log('Program account created', transactionSignature);
+		console.log('Program account created. Transaction hash', transactionSignature);
 	}
-	console.log('Program account pubkic key', programAccountPublicKey.toBase58());
+	console.log('Program account public key', programAccountPublicKey.toBase58());
 	return programAccountPublicKey;
 }
 
