@@ -1,4 +1,5 @@
 import { AccountInfo, Connection, Keypair, PublicKey, sendAndConfirmTransaction, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
+import BN from 'bn.js';
 import { deserialize, deserializeUnchecked, serialize } from 'borsh';
 import { getPayerKeypair, getProgramKeypair } from './utils';
 
@@ -16,6 +17,7 @@ class Assignable {
 
 class Payload extends Assignable {}
 class StorageData extends Assignable {}
+class GameInfo extends Assignable {}
 
 const StorageSchema = new Map([
 	[
@@ -51,15 +53,102 @@ const PayloadSchema = new Map([
 	],
 ]);
 
+const GameInfoSchema = new Map([
+	[
+		GameInfo,
+		{
+			kind: 'struct',
+			fields: [
+				['is_initialized', 'u8'],
+				['spl_token_account', ['u8', 32]],
+			],
+		},
+	],
+]);
+
 async function start() {
+	await testAddReward();
+}
+
+async function testAddReward() {
+	const SCHEMA = new Map([
+		[
+			Payload,
+			{
+				kind: 'struct',
+				fields: [
+					['tag', 'u8'],
+					['reward_amount', 'u128'],
+				],
+			},
+		],
+	]);
 	const programAccountPublicKey = await getOrcreateProgramAccountIfNotExists();
-	const info = await connection.getAccountInfo(programAccountPublicKey);
-	// await test(programAccountPublicKey);
-	// await printProgramAccountData(programAccountPublicKey);
 	const payerKeyPair = getPayerKeypair();
 	const programKeyPair = getProgramKeypair();
 	const programId = programKeyPair.publicKey;
-	console.log(info?.owner.toString(), programId.toString());
+	const instruction = new TransactionInstruction({
+		keys: [],
+		programId,
+		data: Buffer.from(
+			serialize(
+				SCHEMA,
+				new Payload({
+					tag: 2,
+					reward_amount: new BN(100000000000000),
+				}),
+			),
+		),
+	});
+	const transaction = new Transaction();
+	transaction.add(instruction);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
+	console.log(transactionSignature);
+}
+
+async function testRegister() {
+	const SCHEMA = new Map([
+		[
+			Payload,
+			{
+				kind: 'struct',
+				fields: [
+					['tag', 'u8'],
+					['upline', ['u8', 32]],
+				],
+			},
+		],
+	]);
+	const programAccountPublicKey = await getOrcreateProgramAccountIfNotExists();
+	const payerKeyPair = getPayerKeypair();
+	const programKeyPair = getProgramKeypair();
+	const programId = programKeyPair.publicKey;
+	const instruction = new TransactionInstruction({
+		keys: [],
+		programId,
+		data: Buffer.from(
+			serialize(
+				SCHEMA,
+				new Payload({
+					tag: 1,
+					// upline: PublicKey.default.toBytes(),
+					upline: payerKeyPair.publicKey.toBytes(),
+				}),
+			),
+		),
+	});
+	const transaction = new Transaction();
+	transaction.add(instruction);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
+	console.log(transactionSignature);
+}
+
+async function testAccountDataSerializationAndDeserialization() {
+	const programAccountPublicKey = await getOrcreateProgramAccountIfNotExists();
+	const payerKeyPair = getPayerKeypair();
+	const programKeyPair = getProgramKeypair();
+	const programId = programKeyPair.publicKey;
+	// console.log(info?.owner.toString(), programId.toString());
 	const instruction = new TransactionInstruction({
 		keys: [
 			{ pubkey: programAccountPublicKey, isSigner: false, isWritable: true },
@@ -73,6 +162,9 @@ async function start() {
 	transaction.add(instruction);
 	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
 	console.log(transactionSignature);
+	const info = await connection.getAccountInfo(programAccountPublicKey);
+	const deserializedGameInfo = deserialize(GameInfoSchema, GameInfo, info?.data || Buffer.alloc(0));
+	console.log(deserializedGameInfo);
 }
 
 async function printProgramAccountData(programAccountPublicKey: PublicKey) {
