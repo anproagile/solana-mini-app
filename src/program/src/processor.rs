@@ -4,7 +4,7 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
     msg,
-    program::invoke,
+    program::{invoke, invoke_signed},
     program_error::ProgramError,
     program_option::COption,
     program_pack::Pack,
@@ -35,6 +35,7 @@ impl Processor {
             Command::AddReward { reward_amount } => {
                 Self::process_add_reward(program_id, accounts, reward_amount)
             }
+            Command::Claim => Self::process_claim_reward(program_id, accounts),
             _ => return Err(CommandError::InvalidCommand.into()),
         }
         // let accounts_iter = &mut accounts.iter();
@@ -72,6 +73,111 @@ impl Processor {
         //     .btree_storage
         //     .insert(deserialized_payload.key, deserialized_payload.value);
         // storage.serialize(&mut &mut program_account.data.borrow_mut()[..])?;
+    }
+
+    // 0 - [signer]   - The player (holder) account
+    // 1 - [writable] - Program account
+    // 2 - [writable] - The player program account
+    // 3 - []         - The token account of the current program
+    // 4-  []         - The PDA, owner (in term of token, not account owner) of token account
+    // 5 - []         - The player token account
+    // 6 - []         - The token program
+    pub fn process_claim_reward(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+        let account_iter = &mut accounts.iter();
+        let player_holder_account = next_account_info(account_iter)?;
+
+        // Make sure signature for player who claim the reward is provided
+        if !player_holder_account.is_signer {
+            msg!("Player program account must be signed");
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        let program_account = next_account_info(account_iter)?;
+
+        // Make sure program account owner is the current program
+        if program_account.owner != program_id {
+            msg!("Program account owner is not current program");
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        let program_account_data = GameInfo::unpack(&program_account.try_borrow_data()?)?;
+        let player_program_account = next_account_info(account_iter)?;
+
+        // Make sure player program account owner is the current program
+        if player_program_account.owner != program_id {
+            msg!("Player program account owner is not current program");
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        let mut player_program_account_data =
+            Player::unpack(&player_program_account.try_borrow_data()?)?;
+
+        // Make sure player program account owned by signer
+        if player_program_account_data.owner != *player_holder_account.key {
+            msg!("Player program account do not belongs to signer");
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        // Make sure there's reward to claim
+        if player_program_account_data.reward_to_claim == 0 {
+            msg!("No reward to claim");
+            return Err(GameError::UnclaimableAmount.into());
+        }
+
+        let program_token_account = next_account_info(account_iter)?;
+        let pda_account = next_account_info(account_iter)?;
+
+        // When init, program_token_account ownership (not account owner) has been transfer to pda (an account without private key)
+        let (pda, nonce) = Pubkey::find_program_address(&[PDA_SEED.as_bytes()], program_id);
+
+        // Make sure it is the token account used during the program initialization
+        if *program_token_account.key != program_account_data.spl_token_account {
+            msg!("Program token account do not match with current program token account");
+            return Err(ProgramError::InvalidAccountData);
+        }
+
+        let player_token_account = next_account_info(account_iter)?;
+        // No need to check player_token_account owner == spl_token::id(), if invalid owner, program will panic when do transfer
+        let token_program = next_account_info(account_iter)?;
+        if !spl_token::check_id(token_program.key) {
+            msg!("Token program is not SPL TOKEN program");
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        //https://docs.rs/spl-token/3.2.0/spl_token/instruction/fn.transfer.html
+        let transfer_to_player_instruction = spl_token::instruction::transfer(
+            &spl_token::id(),
+            program_token_account.key,
+            player_token_account.key,
+            &pda,
+            &[&pda],
+            player_program_account_data
+                .reward_to_claim
+                .try_into()
+                .unwrap(), // To fix, use u64 for reward_to_claim
+        )?;
+        msg!("Claim reward by transfer from program token account to the player");
+        // All account involved in the instruction need to be passed when invoke
+        invoke_signed(
+            &transfer_to_player_instruction,
+            &[
+                program_token_account.clone(),
+                player_token_account.clone(),
+                token_program.clone(),
+                pda_account.clone(),
+            ],
+            &[&[PDA_SEED.as_bytes(), &[nonce]]],
+        )?;
+
+        // After transfer, reset reward amount for player
+        player_program_account_data.reward_to_claim = 0;
+
+        Player::pack(
+            player_program_account_data,
+            &mut player_program_account.try_borrow_mut_data()?,
+        )?;
+
+        Ok(())
     }
 
     // 0 - [signer]   - The admin (holder) account
@@ -130,17 +236,19 @@ impl Processor {
                 return Err(ProgramError::IncorrectProgramId);
             }
 
-            if *upline_player_program_account.key != player_program_account_data.upline.unwrap() {
-                msg!("Upline account passed was not current player upline");
-                return Err(GameError::InvalidUpline.into());
-            }
-
             let mut upline_player_program_account_data =
                 Player::unpack_unchecked(&upline_player_program_account.try_borrow_data()?)?;
 
             if !upline_player_program_account_data.is_initialized {
                 msg!("Upline player program account is not initialized");
                 return Err(GameError::NotInitialize.into());
+            }
+
+            if upline_player_program_account_data.owner
+                != player_program_account_data.upline.unwrap()
+            {
+                msg!("Upline account passed was not current player upline");
+                return Err(GameError::InvalidUpline.into());
             }
 
             let upline_reward = reward_amount * 10 / 100;
@@ -237,7 +345,8 @@ impl Processor {
         )?;
 
         // Invoke token_account ownership transfer
-        // Order need to match https://github.com/solana-labs/solana-program-library/blob/master/token/program/src/instruction.rs
+        // Order need to match https://github.com/solana-labs/solana-program-library/blob/master/token/program/src/instruction.rs ?
+        // All account involved in the instruction need to be passed when invoke
         invoke(
             &set_authority_instruction,
             &[token_account.clone(), admin_account.clone()],
@@ -286,8 +395,10 @@ impl Processor {
             return Err(ProgramError::AccountAlreadyInitialized);
         }
 
+        // Bind player account with program account to prevent user create another program account, add reward to themselves, and pass the "fake" player account
         // Check upline owner = current program
         // Check upline is not self-recursive
+        // Looks like need to pass player program account instead of Pubkey, if not there might be "undefined" upline
 
         player_data.is_initialized = true;
         player_data.owner = *player_holder_account.key;

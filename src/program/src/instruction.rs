@@ -39,7 +39,11 @@ pub enum Command {
     // 0 - [signer]   - The player (holder) account
     // 1 - [writable] - Program account
     // 2 - [writable] - The player program account
-    Claim {},
+    // 3 - []         - The token account of the current program
+    // 4-  []         - The PDA, owner (in term of token, not account owner) of token account
+    // 5 - []         - The player token account
+    // 6 - []         - The token program
+    Claim,
 }
 
 impl Command {
@@ -61,6 +65,7 @@ impl Command {
                 let reward_amount = u128::from_le_bytes(rest[0..16].try_into().unwrap());
                 Self::AddReward { reward_amount }
             }
+            3 => Self::Claim,
             _ => return Err(ProgramError::InvalidInstructionData), // early return the unpack function with Err, instead of returning the Err as argument for Ok
         })
     }

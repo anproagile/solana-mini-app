@@ -23,6 +23,9 @@ pub enum GameError {
 
     #[error("Invalid upline")]
     InvalidUpline,
+
+    #[error("Unclaimable amount")]
+    UnclaimableAmount,
 }
 
 // Implement conversion for GameError to ProgramError
