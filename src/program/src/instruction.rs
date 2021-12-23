@@ -1,3 +1,4 @@
+use crate::error::CommandError;
 use arrayref::array_ref;
 use borsh::BorshDeserialize;
 use solana_program::{msg, program_error::ProgramError, program_option::COption, pubkey::Pubkey};
@@ -28,9 +29,17 @@ pub enum Command {
     // Admin add reward to player
     // tag = 2
     // 0 - [signer]   - The admin (holder) account
-    // 1 - [writable] - The player program account
-    // 2 - [writable] - The player upline program account
+    // 1 - [writable] - Program account
+    // 2 - [writable] - The player program account
+    // 3 - [writable] - The player upline program account
     AddReward { reward_amount: u128 },
+
+    // Player claim reward
+    // tag = 3
+    // 0 - [signer]   - The player (holder) account
+    // 1 - [writable] - Program account
+    // 2 - [writable] - The player program account
+    Claim {},
 }
 
 impl Command {
@@ -39,6 +48,7 @@ impl Command {
         let (tag, rest) = input
             .split_first()
             .ok_or(ProgramError::InvalidInstructionData)?;
+        msg!("Instruction tag {}", tag);
         Ok(match tag {
             0 => Self::Init, // use statement instead of return, which terminate the function. The Self::Init will be passed into Ok enum return return by unpack function
             1 => {
@@ -55,8 +65,8 @@ impl Command {
         })
     }
 
-    // Assume the received byte buffer, the starting of it will be COption<Pubkey>
-    // When COption being serialized, 1st byte will indicate it is Option::None or Option::Some
+    // Assume the received byte buffer, the starting of it will be Option<Pubkey>
+    // When Option being serialized, 1st byte will indicate it is Option::None or Option::Some
     // The following 32 bytes will be the Pubkey
     // Return tuple, which consists of COption<Pubkey> and the rest of the byte in &[u8]
     pub fn unpack_pubkey_option(input: &[u8]) -> Result<(COption<Pubkey>, &[u8]), ProgramError> {

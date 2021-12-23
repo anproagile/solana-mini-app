@@ -1,7 +1,6 @@
-import yaml from 'yaml';
+import { Keypair } from '@solana/web3.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Keypair } from '@solana/web3.js';
 
 export function getPayerKeypair(): Keypair {
 	const privateKeyString = fs.readFileSync(path.join(__dirname, '..', '..', 'id.json'), { encoding: 'utf-8' });

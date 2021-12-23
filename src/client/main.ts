@@ -1,4 +1,5 @@
-import { AccountInfo, Connection, Keypair, PublicKey, sendAndConfirmTransaction, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
+import * as SplToken from '@solana/spl-token';
+import { AccountMeta, Connection, Keypair, PublicKey, sendAndConfirmTransaction, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
 import BN from 'bn.js';
 import { deserialize, deserializeUnchecked, serialize } from 'borsh';
 import { getPayerKeypair, getProgramKeypair } from './utils';
@@ -67,9 +68,91 @@ const GameInfoSchema = new Map([
 ]);
 
 async function start() {
-	await testAddReward();
+	// await testInit();
+	// await testRegister();
+	// await testAddReward();
 }
 
+async function deserializePlayer(playerAccountPublicKey: PublicKey) {
+	const account = await connection.getAccountInfo(playerAccountPublicKey);
+	const SCHEMA = new Map([
+		[
+			Payload,
+			{
+				kind: 'struct',
+				fields: [
+					['is_initialized', 'u8'],
+					['owner', ['u8', 32]],
+					['reward_to_claim', 'u128'],
+					['has_upline', ['u8', 4]],
+					['upline', ['u8', 32]],
+				],
+			},
+		],
+	]);
+	if (account) {
+		const deserializedPlayerAccountData = deserialize(SCHEMA, Payload, account.data);
+		//@ts-expect-error
+		const { is_initialized, owner, reward_to_claim, has_upline, upline } = deserializedPlayerAccountData;
+		// console.log('is_initialized', Boolean(is_initialized));
+		// console.log('owner', new PublicKey(owner).toBase58());
+		// console.log('reward_to_claim', reward_to_claim);
+		// console.log('has_upline', Boolean(has_upline));
+		// if (Boolean(has_upline)) {
+		// 	console.log('upline', new PublicKey(upline).toBase58());
+		// }
+		if (Boolean(is_initialized)) {
+			return deserializedPlayerAccountData;
+		}
+	}
+}
+
+// 0 - [signer]   - The admin (holder) account
+// 1 - [writable] - Program account
+// 2 - [writable] - An token account created by the admin, and pre-funded
+// 3 - []         - The token program
+async function testInit() {
+	const SCHEMA = new Map([
+		[
+			Payload,
+			{
+				kind: 'struct',
+				fields: [['tag', 'u8']],
+			},
+		],
+	]);
+	const programAccountPublicKey = await getOrcreateProgramAccountIfNotExists('game_info', 65);
+	const adminKeyPair = getPayerKeypair();
+	const programKeyPair = getProgramKeypair();
+	const programId = programKeyPair.publicKey;
+	const { mintAccountKeypair, tokenAccountKeypair } = await createTokenAccount();
+	const instruction = new TransactionInstruction({
+		keys: [
+			{ isSigner: true, isWritable: false, pubkey: adminKeyPair.publicKey },
+			{ isSigner: false, isWritable: true, pubkey: programAccountPublicKey },
+			{ isSigner: false, isWritable: true, pubkey: tokenAccountKeypair.publicKey },
+			{ isSigner: false, isWritable: false, pubkey: SplToken.TOKEN_PROGRAM_ID },
+		],
+		programId,
+		data: Buffer.from(
+			serialize(
+				SCHEMA,
+				new Payload({
+					tag: 0,
+				}),
+			),
+		),
+	});
+	const transaction = new Transaction().add(instruction);
+	await sendAndConfirmTransaction(connection, transaction, [adminKeyPair]);
+	console.log('After call game init');
+	console.log('Token account info', JSON.stringify(await (await connection.getParsedAccountInfo(tokenAccountKeypair.publicKey)).value?.data, null, 5));
+}
+
+// 0 - [signer]   - The admin (holder) account
+// 1 - [writable] - Program account
+// 2 - [writable] - The player program account
+// 3 - [writable] - The player upline program account
 async function testAddReward() {
 	const SCHEMA = new Map([
 		[
@@ -83,27 +166,37 @@ async function testAddReward() {
 			},
 		],
 	]);
-	const programAccountPublicKey = await getOrcreateProgramAccountIfNotExists();
+	const gameProgramAccountKeypair = await getOrcreateProgramAccountIfNotExists('game_info', 65);
+	const playerProgramAccoutKeypair = await getOrcreateProgramAccountIfNotExists('player', 85);
+	const uplinePlayerProgramAccountData = await deserializePlayer(playerProgramAccoutKeypair);
 	const payerKeyPair = getPayerKeypair();
 	const programKeyPair = getProgramKeypair();
 	const programId = programKeyPair.publicKey;
+	const keys: AccountMeta[] = [
+		{ pubkey: payerKeyPair.publicKey, isSigner: true, isWritable: false },
+		{ pubkey: gameProgramAccountKeypair, isSigner: false, isWritable: true },
+		{ pubkey: playerProgramAccoutKeypair, isSigner: false, isWritable: true },
+	];
+	if (uplinePlayerProgramAccountData) {
+		//@ts-expect-error
+		keys.push({ pubkey: new PublicKey(uplinePlayerProgramAccountData.upline).toBase58(), isSigner: false, isWritable: true });
+	}
 	const instruction = new TransactionInstruction({
-		keys: [],
+		keys,
 		programId,
 		data: Buffer.from(
 			serialize(
 				SCHEMA,
 				new Payload({
 					tag: 2,
-					reward_amount: new BN(100000000000000),
+					reward_amount: new BN(10000000000), // 100
 				}),
 			),
 		),
 	});
 	const transaction = new Transaction();
 	transaction.add(instruction);
-	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
-	console.log(transactionSignature);
+	await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
 }
 
 async function testRegister() {
@@ -114,37 +207,45 @@ async function testRegister() {
 				kind: 'struct',
 				fields: [
 					['tag', 'u8'],
-					['upline', ['u8', 32]],
+					[
+						'upline',
+						{
+							kind: 'option',
+							type: ['u8', 32],
+						},
+					],
 				],
 			},
 		],
 	]);
-	const programAccountPublicKey = await getOrcreateProgramAccountIfNotExists();
+	const playerAccountPublicKey = await getOrcreateProgramAccountIfNotExists('player', 85);
 	const payerKeyPair = getPayerKeypair();
 	const programKeyPair = getProgramKeypair();
 	const programId = programKeyPair.publicKey;
 	const instruction = new TransactionInstruction({
-		keys: [],
+		keys: [
+			{ pubkey: payerKeyPair.publicKey, isSigner: true, isWritable: false },
+			{ pubkey: playerAccountPublicKey, isSigner: false, isWritable: true },
+		],
 		programId,
 		data: Buffer.from(
 			serialize(
 				SCHEMA,
 				new Payload({
 					tag: 1,
-					// upline: PublicKey.default.toBytes(),
-					upline: payerKeyPair.publicKey.toBytes(),
+					// upline: payerKeyPair.publicKey.toBytes(),
+					upline: playerAccountPublicKey.toBytes(),
 				}),
 			),
 		),
 	});
 	const transaction = new Transaction();
 	transaction.add(instruction);
-	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
-	console.log(transactionSignature);
+	await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
 }
 
 async function testAccountDataSerializationAndDeserialization() {
-	const programAccountPublicKey = await getOrcreateProgramAccountIfNotExists();
+	const programAccountPublicKey = await getOrcreateProgramAccountIfNotExists('test', 0);
 	const payerKeyPair = getPayerKeypair();
 	const programKeyPair = getProgramKeypair();
 	const programId = programKeyPair.publicKey;
@@ -208,7 +309,57 @@ async function test(programAccountPublicKey: PublicKey) {
 	console.log(transactionSignature);
 }
 
-async function getOrcreateProgramAccountIfNotExists() {
+async function createTokenAccount() {
+	const payerKeyPair = getPayerKeypair();
+	const tokenAccountKeypair = Keypair.generate();
+	const mintAccountKeypair = Keypair.generate();
+	const [lamportsForMintAccount, lamportsForTokenAccount] = await Promise.all([
+		connection.getMinimumBalanceForRentExemption(SplToken.MintLayout.span),
+		connection.getMinimumBalanceForRentExemption(SplToken.AccountLayout.span),
+	]);
+	let transaction = new Transaction().add(
+		// Mint account
+		SystemProgram.createAccount({
+			fromPubkey: payerKeyPair.publicKey,
+			newAccountPubkey: mintAccountKeypair.publicKey,
+			space: SplToken.MintLayout.span,
+			lamports: lamportsForMintAccount,
+			programId: SplToken.TOKEN_PROGRAM_ID,
+		}),
+		// Token account
+		SystemProgram.createAccount({
+			fromPubkey: payerKeyPair.publicKey,
+			newAccountPubkey: tokenAccountKeypair.publicKey,
+			space: SplToken.AccountLayout.span,
+			lamports: lamportsForTokenAccount,
+			programId: SplToken.TOKEN_PROGRAM_ID,
+		}),
+	);
+	await sendAndConfirmTransaction(connection, transaction, [payerKeyPair, mintAccountKeypair, tokenAccountKeypair]);
+	// Initialize mint account, minting / freeze will require signature from payerKeypair
+	transaction = new Transaction().add(
+		SplToken.Token.createInitMintInstruction(SplToken.TOKEN_PROGRAM_ID, mintAccountKeypair.publicKey, 8, payerKeyPair.publicKey, payerKeyPair.publicKey),
+		SplToken.Token.createInitAccountInstruction(SplToken.TOKEN_PROGRAM_ID, mintAccountKeypair.publicKey, tokenAccountKeypair.publicKey, payerKeyPair.publicKey),
+	);
+	await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
+	console.log('Before mint');
+	console.log('Mint account info', JSON.stringify(await (await connection.getParsedAccountInfo(mintAccountKeypair.publicKey)).value?.data, null, 5));
+	console.log('Token account info', JSON.stringify(await (await connection.getParsedAccountInfo(tokenAccountKeypair.publicKey)).value?.data, null, 5));
+	// Mint token
+	transaction = new Transaction().add(
+		SplToken.Token.createMintToInstruction(SplToken.TOKEN_PROGRAM_ID, mintAccountKeypair.publicKey, tokenAccountKeypair.publicKey, payerKeyPair.publicKey, [], 1000e8),
+	);
+	await sendAndConfirmTransaction(connection, transaction, [payerKeyPair]);
+	console.log('After mint');
+	console.log('Mint account info', JSON.stringify(await (await connection.getParsedAccountInfo(mintAccountKeypair.publicKey)).value?.data, null, 5));
+	console.log('Token account info', JSON.stringify(await (await connection.getParsedAccountInfo(tokenAccountKeypair.publicKey)).value?.data, null, 5));
+	return {
+		tokenAccountKeypair,
+		mintAccountKeypair,
+	};
+}
+
+async function getOrcreateProgramAccountIfNotExists(seed: string, space: number) {
 	const payerKeyPair = getPayerKeypair();
 	const programKeyPair = getProgramKeypair();
 	const programId = programKeyPair.publicKey;
@@ -221,21 +372,19 @@ async function getOrcreateProgramAccountIfNotExists() {
 		throw new Error('The program is not executable');
 	}
 
-	const PROGRAM_ACCOUNT_SEED = 'random_seed';
-	const programAccountPublicKey = await PublicKey.createWithSeed(payerKeyPair.publicKey, PROGRAM_ACCOUNT_SEED, programId);
+	const programAccountPublicKey = await PublicKey.createWithSeed(payerKeyPair.publicKey, seed, programId);
 	let programAccountInfo = await connection.getAccountInfo(programAccountPublicKey);
 
 	if (programAccountInfo === null) {
 		console.log(`Program ${programId} doesn't have account for program state`);
 		// Solana default max account size = 10 MB, here we put only 1 MB
 		// const space = 1048576;
-		const space = 33;
 		const lamportsToExemptRent = await connection.getMinimumBalanceForRentExemption(space);
 		const transaction = new Transaction().add(
 			SystemProgram.createAccountWithSeed({
 				fromPubkey: payerKeyPair.publicKey,
 				basePubkey: payerKeyPair.publicKey,
-				seed: PROGRAM_ACCOUNT_SEED,
+				seed,
 				newAccountPubkey: programAccountPublicKey,
 				lamports: lamportsToExemptRent,
 				space,
