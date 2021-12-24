@@ -31,7 +31,7 @@ impl Processor {
         let instruction = Command::unpack(instruction_data)?;
         match instruction {
             Command::Init => Self::process_init(program_id, accounts),
-            Command::Register { upline } => Self::process_register(program_id, accounts, upline),
+            Command::Register => Self::process_register(program_id, accounts),
             Command::AddReward { reward_amount } => {
                 Self::process_add_reward(program_id, accounts, reward_amount)
             }
@@ -152,11 +152,9 @@ impl Processor {
             player_token_account.key,
             &pda,
             &[&pda],
-            player_program_account_data
-                .reward_to_claim
-                .try_into()
-                .unwrap(), // To fix, use u64 for reward_to_claim
+            player_program_account_data.reward_to_claim,
         )?;
+
         msg!("Claim reward by transfer from program token account to the player");
         // All account involved in the instruction need to be passed when invoke
         invoke_signed(
@@ -188,7 +186,7 @@ impl Processor {
     pub fn process_add_reward(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
-        reward_amount: u128,
+        reward_amount: u64,
     ) -> ProgramResult {
         msg!("process_add_reward");
         let account_iter = &mut accounts.iter();
@@ -257,10 +255,10 @@ impl Processor {
             let player_reward = reward_amount * 90 / 100;
 
             player_program_account_data.reward_to_claim =
-                u128::checked_add(player_program_account_data.reward_to_claim, player_reward)
+                u64::checked_add(player_program_account_data.reward_to_claim, player_reward)
                     .ok_or(GameError::RewardAmountOverflow)?;
 
-            upline_player_program_account_data.reward_to_claim = u128::checked_add(
+            upline_player_program_account_data.reward_to_claim = u64::checked_add(
                 upline_player_program_account_data.reward_to_claim,
                 upline_reward,
             )
@@ -279,7 +277,7 @@ impl Processor {
             )?;
         } else {
             player_program_account_data.reward_to_claim =
-                u128::checked_add(player_program_account_data.reward_to_claim, reward_amount)
+                u64::checked_add(player_program_account_data.reward_to_claim, reward_amount)
                     .ok_or(GameError::RewardAmountOverflow)?;
 
             Player::pack(
@@ -376,11 +374,9 @@ impl Processor {
     // Should program account being passed ?
     // 0 - [signer]   - The player (holder) account
     // 1 - [writable] - The player account for the program
-    pub fn process_register(
-        program_id: &Pubkey,
-        accounts: &[AccountInfo],
-        upline: COption<Pubkey>,
-    ) -> ProgramResult {
+    // 2 - []         - The program account
+    // 3 - []         - The upline player account for the program
+    pub fn process_register(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
         msg!("process_register");
         let account_iter = &mut accounts.iter();
         let player_holder_account = next_account_info(account_iter)?;
@@ -402,15 +398,40 @@ impl Processor {
             return Err(ProgramError::AccountAlreadyInitialized);
         }
 
+        let program_account = next_account_info(account_iter)?;
         // Bind player account with program account to prevent user create another program account, add reward to themselves, and pass the "fake" player account
-        // Check upline owner = current program
-        // Check upline is not self-recursive
-        // Looks like need to pass player program account instead of Pubkey, if not there might be "undefined" upline
+        // Check program owner = current program
+        if program_account.owner != program_id {
+            msg!("Program account owner is not the current program");
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        let has_upline = accounts.len() == 4;
+
+        if has_upline {
+            let upline_player_program_account = next_account_info(account_iter)?;
+            // Check upline owner = current program
+            if upline_player_program_account.owner != program_id {
+                msg!("Upline player program account owner is not the current program");
+                return Err(ProgramError::IncorrectProgramId);
+            }
+
+            let upline_player_data =
+                Player::unpack(&upline_player_program_account.try_borrow_mut_data()?)?;
+            // Check upline is not self-recursive
+            if upline_player_data.owner == player_data.owner {
+                msg!("Upline cannot be same account as current player");
+                return Err(GameError::SelfRecursiveUpline.into());
+            }
+
+            player_data.upline = COption::Some(*upline_player_program_account.key);
+        } else {
+            player_data.upline = COption::None;
+        }
 
         player_data.is_initialized = true;
         player_data.owner = *player_holder_account.key;
         player_data.reward_to_claim = 0;
-        player_data.upline = upline;
 
         Player::pack(
             player_data,

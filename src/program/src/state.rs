@@ -100,7 +100,8 @@ impl Pack for GameInfo {
 pub struct Player {
     pub is_initialized: bool,    // 1 byte
     pub owner: Pubkey,           // 32 byte
-    pub reward_to_claim: u128,   // 16 byte
+    pub reward_to_claim: u64,    // 8 byte, follow SPL token amount byte
+    pub program_account: Pubkey, // 32 byte
     pub upline: COption<Pubkey>, // 4 + 32 byte  msg!("{:?}", size_of::<COption<Pubkey>>()) shows 36
 }
 
@@ -113,14 +114,14 @@ impl IsInitialized for Player {
 }
 
 impl Pack for Player {
-    const LEN: usize = 1 + 32 + 16 + 4 + 32;
+    const LEN: usize = 1 + 32 + 8 + 32 + 4 + 32;
     // Unpack account data (byte buffer) to Player
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         // Shadow src argument, and use array_ref! to make src slice-able
         let src = array_ref![src, 0, Player::LEN];
         // Slice src based on struct property byte
-        let (is_initialized, owner, reward_to_claim, has_upline, upline) =
-            array_refs![&src, 1, 32, 16, 4, 32];
+        let (is_initialized, owner, reward_to_claim, program_account, has_upline, upline) =
+            array_refs![&src, 1, 32, 8, 32, 4, 32];
         // Convert is_initialized from byte to bool
         let is_initialized = match is_initialized {
             // First element is 0
@@ -139,7 +140,8 @@ impl Pack for Player {
             is_initialized,
             // Dereference owner to get the byte array in heap
             owner: Pubkey::new_from_array(*owner),
-            reward_to_claim: u128::from_le_bytes(*reward_to_claim),
+            reward_to_claim: u64::from_le_bytes(*reward_to_claim),
+            program_account: Pubkey::new_from_array(*program_account),
             upline,
         })
     }
@@ -150,13 +152,20 @@ impl Pack for Player {
         let dst = array_mut_ref![dst, 0, Player::LEN];
         // Slice dst into mutable byte chunks
         // Added _dst postfix to avoid shadowing when destructure from Player struct
-        let (is_initialized_dst, owner_dst, reward_to_claim_dst, has_upline_dst, upline_dst) =
-            mut_array_refs![dst, 1, 32, 16, 4, 32];
+        let (
+            is_initialized_dst,
+            owner_dst,
+            reward_to_claim_dst,
+            program_account_dst,
+            has_upline_dst,
+            upline_dst,
+        ) = mut_array_refs![dst, 1, 32, 8, 32, 4, 32];
         // Destructure Player struct
         let Player {
             is_initialized,
             owner,
             reward_to_claim,
+            program_account,
             upline,
         } = self;
         // Since the sliced chunks are mutable, direct modify the chunks content will reflect in account data

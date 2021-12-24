@@ -26,6 +26,9 @@ pub enum GameError {
 
     #[error("Unclaimable amount")]
     UnclaimableAmount,
+
+    #[error("Upline cannot be yourself")]
+    SelfRecursiveUpline,
 }
 
 // Implement conversion for GameError to ProgramError

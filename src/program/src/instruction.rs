@@ -1,6 +1,3 @@
-use crate::error::CommandError;
-use arrayref::array_ref;
-use borsh::BorshDeserialize;
 use solana_program::{msg, program_error::ProgramError, program_option::COption, pubkey::Pubkey};
 
 // #[derive(BorshDeserialize, Debug)]
@@ -24,7 +21,7 @@ pub enum Command {
     // tag = 1
     // 0 - [signer]   - The player (holder) account
     // 1 - [writable] - The player account for the program
-    Register { upline: COption<Pubkey> },
+    Register,
 
     // Admin add reward to player
     // tag = 2
@@ -32,7 +29,7 @@ pub enum Command {
     // 1 - [writable] - Program account
     // 2 - [writable] - The player program account
     // 3 - [writable] - The player upline program account
-    AddReward { reward_amount: u128 },
+    AddReward { reward_amount: u64 },
 
     // Player claim reward
     // tag = 3
@@ -55,14 +52,11 @@ impl Command {
         msg!("Instruction tag {}", tag);
         Ok(match tag {
             0 => Self::Init, // use statement instead of return, which terminate the function. The Self::Init will be passed into Ok enum return return by unpack function
-            1 => {
-                let (upline, _rest) = Self::unpack_pubkey_option(rest)?;
-                Self::Register { upline }
-            }
+            1 => Self::Register,
             2 => {
-                // Get 16 bytes (u128)
+                // Get 8 bytes (u64)
                 // Borsh serialization is little endian, therefore use from_le_bytes
-                let reward_amount = u128::from_le_bytes(rest[0..16].try_into().unwrap());
+                let reward_amount = u64::from_le_bytes(rest[0..8].try_into().unwrap());
                 Self::AddReward { reward_amount }
             }
             3 => Self::Claim,
