@@ -21,6 +21,8 @@ pub enum Command {
     // tag = 1
     // 0 - [signer]   - The player (holder) account
     // 1 - [writable] - The player account for the program
+    // 2 - []         - The program account
+    // 3 - []         - The upline player account for the program
     Register,
 
     // Admin add reward to player

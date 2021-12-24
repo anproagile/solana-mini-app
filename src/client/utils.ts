@@ -116,20 +116,24 @@ export async function initializeGame(tokenAccountKeypair: Keypair, adminKeypair:
 
 // 0 - [signer]   - The player (holder) account
 // 1 - [writable] - The player account for the program
-export async function registerPlayer(playerKeypair: Keypair, playerAccountKeypair: Keypair, feePayerKeypair: Keypair, uplineKeypair?: Keypair) {
+// 2 - []         - The program account
+// 3 - []         - The upline player account for the program
+export async function registerPlayer(playerKeypair: Keypair, playerAccount: Keypair, programAccount: Keypair, feePayerKeypair: Keypair, uplineKeypair?: Keypair) {
 	const programId = getDeployedProgramKeypair().publicKey;
 	const playerRegisterInstruction: IPlayerRegisterIx = {
 		tag: Tag.Register,
 	};
+	const keys: AccountMeta[] = [
+		{ isSigner: true, isWritable: false, pubkey: playerKeypair.publicKey },
+		{ isSigner: false, isWritable: true, pubkey: playerAccount.publicKey },
+		{ isSigner: false, isWritable: false, pubkey: programAccount.publicKey },
+	];
 	if (uplineKeypair) {
-		playerRegisterInstruction.upline = uplineKeypair.publicKey.toBuffer();
+		keys.push({ isSigner: false, isWritable: false, pubkey: uplineKeypair.publicKey });
 	}
 	const transaction = new Transaction().add(
 		new TransactionInstruction({
-			keys: [
-				{ isSigner: true, isWritable: false, pubkey: playerKeypair.publicKey },
-				{ isSigner: false, isWritable: true, pubkey: playerAccountKeypair.publicKey },
-			],
+			keys,
 			programId,
 			data: SchemaBuilder.serialize(PlayerRegisterIxSchema, new SchemaData(playerRegisterInstruction)),
 		}),

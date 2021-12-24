@@ -244,9 +244,7 @@ impl Processor {
                 return Err(GameError::NotInitialize.into());
             }
 
-            if upline_player_program_account_data.owner
-                != player_program_account_data.upline.unwrap()
-            {
+            if *upline_player_program_account.key != player_program_account_data.upline.unwrap() {
                 msg!("Upline account passed was not current player upline");
                 return Err(GameError::InvalidUpline.into());
             }
@@ -371,7 +369,6 @@ impl Processor {
         Ok(())
     }
 
-    // Should program account being passed ?
     // 0 - [signer]   - The player (holder) account
     // 1 - [writable] - The player account for the program
     // 2 - []         - The program account
@@ -416,10 +413,8 @@ impl Processor {
                 return Err(ProgramError::IncorrectProgramId);
             }
 
-            let upline_player_data =
-                Player::unpack(&upline_player_program_account.try_borrow_mut_data()?)?;
             // Check upline is not self-recursive
-            if upline_player_data.owner == player_data.owner {
+            if upline_player_program_account.key == player_program_account.key {
                 msg!("Upline cannot be same account as current player");
                 return Err(GameError::SelfRecursiveUpline.into());
             }

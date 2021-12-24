@@ -11,25 +11,6 @@ export const GameInitIxSchema = new Map([
 	],
 ]);
 
-export const PlayerRegisterIxSchema = new Map([
-	[
-		SchemaData,
-		{
-			kind: 'struct',
-			fields: [
-				['tag', 'u8'],
-				[
-					'upline',
-					{
-						kind: 'option',
-						type: ['u8', 32],
-					},
-				],
-			],
-		},
-	],
-]);
-
 export const AddRewardIxScheme = new Map([
 	[
 		SchemaData,
@@ -37,26 +18,23 @@ export const AddRewardIxScheme = new Map([
 			kind: 'struct',
 			fields: [
 				['tag', 'u8'],
-				['reward_amount', 'u128'],
+				['reward_amount', 'u64'],
 			],
 		},
 	],
 ]);
 
 export const ClaimRewardIxSchema = GameInitIxSchema;
+export const PlayerRegisterIxSchema = GameInitIxSchema;
 
-export interface IAddRewardIx {
+interface BaseIx {
 	tag: Tag;
+}
+
+export interface IAddRewardIx extends BaseIx {
 	reward_amount: number;
 }
 
-export interface IPlayerRegisterIx {
-	tag: Tag;
-	upline?: Buffer;
-}
-
-export interface IGameInitIx {
-	tag: Tag;
-}
-
-export interface IClaimRewardIx extends IGameInitIx {}
+export interface IGameInitIx extends BaseIx {}
+export interface IClaimRewardIx extends BaseIx {}
+export interface IPlayerRegisterIx extends BaseIx {}
