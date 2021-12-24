@@ -83,6 +83,7 @@ impl Processor {
     // 5 - []         - The player token account
     // 6 - []         - The token program
     pub fn process_claim_reward(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+        msg!("process_claim_reward");
         let account_iter = &mut accounts.iter();
         let player_holder_account = next_account_info(account_iter)?;
 
@@ -189,6 +190,7 @@ impl Processor {
         accounts: &[AccountInfo],
         reward_amount: u128,
     ) -> ProgramResult {
+        msg!("process_add_reward");
         let account_iter = &mut accounts.iter();
         let admin_holder_account = next_account_info(account_iter)?;
 
@@ -279,6 +281,11 @@ impl Processor {
             player_program_account_data.reward_to_claim =
                 u128::checked_add(player_program_account_data.reward_to_claim, reward_amount)
                     .ok_or(GameError::RewardAmountOverflow)?;
+
+            Player::pack(
+                player_program_account_data,
+                &mut player_program_account.try_borrow_mut_data()?,
+            )?;
         }
 
         // msg!("Add reward {}", reward_amount);
@@ -374,7 +381,7 @@ impl Processor {
         accounts: &[AccountInfo],
         upline: COption<Pubkey>,
     ) -> ProgramResult {
-        msg!("Register");
+        msg!("process_register");
         let account_iter = &mut accounts.iter();
         let player_holder_account = next_account_info(account_iter)?;
 

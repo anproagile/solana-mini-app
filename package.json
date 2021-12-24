@@ -7,7 +7,7 @@
         "new-build:program": "rm -Rf ./src/program/target/deploy/learn_solana-keypair.json && npm run build:program",
         "build:program": "cargo build-bpf --manifest-path=./src/program/Cargo.toml",
         "test:program": "cargo test-bpf --manifest-path=./src/program/Cargo.toml",
-        "deploy:program": "solana program deploy --config id.json --url localhost src/program/target/deploy/learn_solana.so"
+        "deploy:program:local": "solana program deploy --config id.json --url localhost src/program/target/deploy/learn_solana.so"
     },
     "keywords": [],
     "author": "",
