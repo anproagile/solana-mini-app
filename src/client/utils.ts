@@ -17,6 +17,20 @@ import {
 import { GAME_STATE_BYTE, PLAYER_STATE_BYTE } from './schema/states';
 import { Tag } from './schema/tag';
 
+export async function requestAirdropIfInsufficientBalance(feePayerKeypair: Keypair, signatureCount: number, bytes?: number) {
+	const feePayerBalance = await connection.getBalance(feePayerKeypair.publicKey);
+	const { feeCalculator } = await connection.getRecentBlockhash();
+	let fee = 0;
+	if (bytes) {
+		fee += await connection.getMinimumBalanceForRentExemption(bytes);
+	}
+	fee += feeCalculator.lamportsPerSignature * signatureCount;
+	console.log('Estimated fee', fee / LAMPORTS_PER_SOL);
+	if (feePayerBalance <= fee) {
+		await connection.requestAirdrop(feePayerKeypair.publicKey, fee);
+	}
+}
+
 // 0 - [signer]   - The player (holder) account
 // 1 - [writable] - Program account
 // 2 - [writable] - The player program account
@@ -30,6 +44,7 @@ export async function claimReward(
 	playerAccountPubkey: PublicKey,
 	gameTokenAccountPubkey: PublicKey,
 	playerTokenAccountPubkey: PublicKey,
+	feePayerKeypair: Keypair,
 ) {
 	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const [PDA] = await PublicKey.findProgramAddress([Buffer.from(PDA_SEED)], programId);
@@ -53,7 +68,9 @@ export async function claimReward(
 			),
 		}),
 	);
-	await sendAndConfirmTransaction(connection, transaction, [playerKeypair]);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 1);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, playerKeypair]);
+	console.log('Claim reward instruction', transactionSignature);
 }
 
 // 0 - [signer]   - The admin (holder) account
@@ -91,7 +108,9 @@ export async function addReward(
 			),
 		}),
 	);
-	await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, adminKeypair]);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 1);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, adminKeypair]);
+	console.log('Add reward instruction', transactionSignature);
 }
 
 // 0 - [signer]   - The admin (holder) account
@@ -117,7 +136,9 @@ export async function initializeGame(tokenAccountPublicKey: PublicKey, adminKeyp
 			),
 		}),
 	);
-	await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, adminKeypair]);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 1);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, adminKeypair]);
+	console.log('Initialize game account instruction', transactionSignature);
 }
 
 // 0 - [signer]   - The player (holder) account
@@ -144,7 +165,9 @@ export async function registerPlayer(playerKeypair: Keypair, playerAccountPubkey
 			data: SchemaBuilder.serialize(PlayerRegisterIxSchema, new SchemaData(playerRegisterInstruction)),
 		}),
 	);
-	await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, playerKeypair]);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 1);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, playerKeypair]);
+	console.log('Register player instruction', transactionSignature);
 }
 
 export async function createPlayerKeypair(): Promise<Keypair> {
@@ -167,7 +190,9 @@ export async function createPlayerAccount(feePayerKeypair: Keypair): Promise<Key
 			programId,
 		}),
 	);
-	await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, playerAccount]);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 1, PLAYER_STATE_BYTE);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, playerAccount]);
+	console.log('Player account created', transactionSignature);
 	return playerAccount;
 }
 
@@ -184,7 +209,9 @@ export async function createGameAccount(feePayerKeypair: Keypair): Promise<Keypa
 			programId,
 		}),
 	);
-	await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, gameAccount]);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 2, GAME_STATE_BYTE);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, gameAccount]);
+	console.log('Game account created', transactionSignature);
 	return gameAccount;
 }
 
@@ -220,7 +247,9 @@ export async function mintToken(amount: number, mintAccountKeypair: Keypair, rec
 	const transaction = new Transaction().add(
 		SplToken.Token.createMintToInstruction(SplToken.TOKEN_PROGRAM_ID, mintAccountKeypair.publicKey, receiverAccountKeypair.publicKey, authorityKeypair.publicKey, [], amount),
 	);
-	await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, authorityKeypair]);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 1);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, authorityKeypair]);
+	console.log('Token minted', transactionSignature);
 }
 
 export async function createNewToken(decimals: number, authorityKeypair: Keypair, feePayerKeypair: Keypair): Promise<Keypair> {
@@ -236,7 +265,9 @@ export async function createNewToken(decimals: number, authorityKeypair: Keypair
 		}),
 		SplToken.Token.createInitMintInstruction(SplToken.TOKEN_PROGRAM_ID, mintAccountKeypair.publicKey, decimals, authorityKeypair.publicKey, authorityKeypair.publicKey),
 	);
-	await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, mintAccountKeypair]);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 2, SplToken.MintLayout.span);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, mintAccountKeypair]);
+	console.log('Token created', transactionSignature);
 	return mintAccountKeypair;
 }
 
@@ -253,6 +284,8 @@ export async function createTokenAccount(mintAccountKeypair: Keypair, ownerKeypa
 		}),
 		SplToken.Token.createInitAccountInstruction(SplToken.TOKEN_PROGRAM_ID, mintAccountKeypair.publicKey, tokenAccountKeypair.publicKey, ownerKeypair.publicKey),
 	);
-	await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, tokenAccountKeypair]);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 2, SplToken.AccountLayout.span);
+	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, tokenAccountKeypair]);
+	console.log('Token account created', transactionSignature);
 	return tokenAccountKeypair;
 }

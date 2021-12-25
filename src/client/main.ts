@@ -4,7 +4,15 @@ import { TOKEN_DECIMALS } from './config';
 import { Player } from './model/player';
 import { AdminModule } from './module/admin';
 import { PlayerModule } from './module/player';
-import { createGameAccount, createNewToken, createTokenAccount, getPayerKeypair, initializeGame, mintToken } from './utils';
+import {
+    createGameAccount,
+    createNewToken,
+    createTokenAccount,
+    getDeployedProgramKeypairOrThrow,
+    getPayerKeypair,
+    initializeGame,
+    mintToken
+} from './utils';
 const prompt = PromptSync();
 
 let feePayerKeypair = getPayerKeypair();
@@ -44,6 +52,7 @@ async function start() {
 }
 
 async function initialize() {
+	await getDeployedProgramKeypairOrThrow();
 	mintAccount = await createNewToken(TOKEN_DECIMALS, authorityKeypair, feePayerKeypair);
 	gameTokenAccount = await createTokenAccount(mintAccount, ownerKeypair, feePayerKeypair);
 	await mintToken(1000 * Math.pow(10, TOKEN_DECIMALS), mintAccount, gameTokenAccount, authorityKeypair, feePayerKeypair);

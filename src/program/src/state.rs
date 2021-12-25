@@ -172,8 +172,9 @@ impl Pack for Player {
         is_initialized_dst[0] = *is_initialized as u8;
         // Convert owner from Pubkey struct to byte array, then copy it into owner_dst
         owner_dst.copy_from_slice(owner.as_ref());
-        // Convert reward_to_chain u128 to byte array, then copy it into reward_to_claim_dst
+        // Convert reward_to_chain to byte array, then copy it into reward_to_claim_dst
         reward_to_claim_dst.copy_from_slice(&reward_to_claim.to_le_bytes());
+        program_account_dst.copy_from_slice(&program_account.as_ref());
         match upline {
             COption::None => has_upline_dst.copy_from_slice(&[0, 0, 0, 0]),
             COption::Some(pubkey) => {

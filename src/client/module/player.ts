@@ -145,7 +145,7 @@ async function claim(players: Player[], gameAccountPubkey: PublicKey, gameTokenA
 				if (playerState.reward_to_claim.eq(new BN(0))) {
 					console.log('No claimable reward');
 				} else {
-					await claimReward(player.keypair, gameAccountPubkey, player.account.publicKey, gameTokenAccountPubkey, player.tokenAccount.publicKey);
+					await claimReward(player.keypair, gameAccountPubkey, player.account.publicKey, gameTokenAccountPubkey, player.tokenAccount.publicKey, player.keypair);
 					console.log(`Claimed ${playerState.reward_to_claim.div(new BN(LAMPORTS_PER_SOL)).toString()} SPL token to ${player.tokenAccount.publicKey.toBase58()}`);
 				}
 			}
