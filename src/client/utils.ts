@@ -2,7 +2,7 @@ import * as SplToken from '@solana/spl-token';
 import { AccountMeta, Keypair, LAMPORTS_PER_SOL, PublicKey, sendAndConfirmTransaction, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { connection, PDA_SEED } from './config';
+import { connection, PDA_SEED, programKeypairPath } from './config';
 import { SchemaBuilder, SchemaData } from './schema/builder';
 import {
 	AddRewardIxScheme,
@@ -25,7 +25,7 @@ import { Tag } from './schema/tag';
 // 5 - [writable] - The player token account
 // 6 - []         - The token program
 export async function claimReward(playerKeypair: Keypair, programAccount: Keypair, playerAccount: Keypair, gameTokenAccount: Keypair, playerTokenAccount: Keypair) {
-	const programId = getDeployedProgramKeypair().publicKey;
+	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const [PDA] = await PublicKey.findProgramAddress([Buffer.from(PDA_SEED)], programId);
 	const transaction = new Transaction().add(
 		new TransactionInstruction({
@@ -63,7 +63,7 @@ export async function addReward(
 	playerUplineAccount?: Keypair,
 ) {
 	rewardAmountInSol = rewardAmountInSol * LAMPORTS_PER_SOL;
-	const programId = getDeployedProgramKeypair().publicKey;
+	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const keys: AccountMeta[] = [
 		{ isSigner: true, isWritable: false, pubkey: adminKeypair.publicKey },
 		{ isSigner: false, isWritable: true, pubkey: programAccount.publicKey },
@@ -93,7 +93,7 @@ export async function addReward(
 // 2 - [writable] - An token account created by the admin, and pre-funded
 // 3 - []         - The token program
 export async function initializeGame(tokenAccountKeypair: Keypair, adminKeypair: Keypair, gameAccountKeypair: Keypair, feePayerKeypair: Keypair) {
-	const programId = getDeployedProgramKeypair().publicKey;
+	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const transaction = new Transaction().add(
 		new TransactionInstruction({
 			keys: [
@@ -118,8 +118,8 @@ export async function initializeGame(tokenAccountKeypair: Keypair, adminKeypair:
 // 1 - [writable] - The player account for the program
 // 2 - []         - The program account
 // 3 - []         - The upline player account for the program
-export async function registerPlayer(playerKeypair: Keypair, playerAccount: Keypair, programAccount: Keypair, feePayerKeypair: Keypair, uplineKeypair?: Keypair) {
-	const programId = getDeployedProgramKeypair().publicKey;
+export async function registerPlayer(playerKeypair: Keypair, playerAccount: Keypair, programAccount: Keypair, feePayerKeypair: Keypair, uplinePubkey?: PublicKey) {
+	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const playerRegisterInstruction: IPlayerRegisterIx = {
 		tag: Tag.Register,
 	};
@@ -128,8 +128,8 @@ export async function registerPlayer(playerKeypair: Keypair, playerAccount: Keyp
 		{ isSigner: false, isWritable: true, pubkey: playerAccount.publicKey },
 		{ isSigner: false, isWritable: false, pubkey: programAccount.publicKey },
 	];
-	if (uplineKeypair) {
-		keys.push({ isSigner: false, isWritable: false, pubkey: uplineKeypair.publicKey });
+	if (uplinePubkey) {
+		keys.push({ isSigner: false, isWritable: false, pubkey: uplinePubkey });
 	}
 	const transaction = new Transaction().add(
 		new TransactionInstruction({
@@ -149,7 +149,7 @@ export async function createPlayerKeypair(): Promise<Keypair> {
 }
 
 export async function createPlayerAccount(feePayerKeypair: Keypair): Promise<Keypair> {
-	const programId = getDeployedProgramKeypair().publicKey;
+	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const playerAccount = Keypair.generate();
 	const lamportsForPlayerAccountRentExeption = await connection.getMinimumBalanceForRentExemption(PLAYER_STATE_BYTE);
 	const transaction = new Transaction().add(
@@ -166,7 +166,7 @@ export async function createPlayerAccount(feePayerKeypair: Keypair): Promise<Key
 }
 
 export async function createGameAccount(feePayerKeypair: Keypair): Promise<Keypair> {
-	const programId = getDeployedProgramKeypair().publicKey;
+	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const gameAccount = Keypair.generate();
 	const lamportsForGameAccountRentExeption = await connection.getMinimumBalanceForRentExemption(GAME_STATE_BYTE);
 	const transaction = new Transaction().add(
@@ -192,10 +192,22 @@ export function getPayerKeypair(): Keypair {
 	return Keypair.fromSecretKey(privateKey);
 }
 
-export function getDeployedProgramKeypair(): Keypair {
-	const privateKeyString = fs.readFileSync(path.join(__dirname, '..', 'program', 'target', 'deploy', 'learn_solana-keypair.json'), { encoding: 'utf-8' });
+export async function getDeployedProgramKeypairOrThrow(): Promise<Keypair> {
+	if (!fs.existsSync(programKeypairPath)) {
+		throw new Error('Please deploy the program first before run the app');
+	}
+	const privateKeyString = fs.readFileSync(programKeypairPath, { encoding: 'utf-8' });
 	const privateKey = Uint8Array.from(JSON.parse(privateKeyString));
-	return Keypair.fromSecretKey(privateKey);
+	const programKeypair = Keypair.fromSecretKey(privateKey);
+
+	const programAccount = await connection.getAccountInfo(programKeypair.publicKey);
+	if (programAccount === null) {
+		throw new Error('Program not found on the chain, are you sure you deployed to the correct chain ?');
+	}
+	if (programAccount.executable === false) {
+		throw new Error('Program account is not executable');
+	}
+	return programKeypair;
 }
 
 export async function mintToken(amount: number, mintAccountKeypair: Keypair, receiverAccountKeypair: Keypair, authorityKeypair: Keypair, feePayerKeypair: Keypair) {

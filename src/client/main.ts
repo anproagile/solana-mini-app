@@ -1,6 +1,9 @@
-import { LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import BN from 'bn.js';
+import PromptSync from 'prompt-sync';
 import { connection, TOKEN_DECIMALS } from './config';
+import { AdminModule } from './module/admin';
+import { PlayerModule } from './module/player';
 import { SchemaBuilder } from './schema/builder';
 import { fromSchemaDataToPlayerState, PlayerStateSchema } from './schema/states';
 import {
@@ -17,8 +20,59 @@ import {
 	registerPlayer,
 	toJSONStringAndBeautify,
 } from './utils';
+const prompt = PromptSync();
+
+let feePayerKeypair = getPayerKeypair();
+let ownerKeypair = feePayerKeypair;
+let authorityKeypair = feePayerKeypair;
+let mintAccount: Keypair;
+let gameTokenAccount: Keypair;
+let gameAccount: Keypair;
+const EXIT = 0;
 
 async function start() {
+	const { payoutModule, playerModule } = await initialize();
+	let choice = 1;
+	while (choice != EXIT) {
+		console.log('');
+		console.log('Main menu');
+		console.log('1. Admin module');
+		console.log('2. Player module');
+		console.log('0. Exit');
+		choice = Number(prompt('Enter your choice: '));
+
+		switch (choice) {
+			case 1:
+				await payoutModule.execute();
+				break;
+			case 2:
+				await playerModule.execute();
+				break;
+			case 0:
+				console.log('Bye bye');
+				break;
+			default:
+				console.log('Invalid choice');
+		}
+	}
+}
+
+async function initialize() {
+	mintAccount = await createNewToken(TOKEN_DECIMALS, authorityKeypair, feePayerKeypair);
+	gameTokenAccount = await createTokenAccount(mintAccount, ownerKeypair, feePayerKeypair);
+	await mintToken(1000 * Math.pow(10, TOKEN_DECIMALS), mintAccount, gameTokenAccount, authorityKeypair, feePayerKeypair);
+	gameAccount = await createGameAccount(feePayerKeypair);
+	await initializeGame(gameTokenAccount, ownerKeypair, gameAccount, feePayerKeypair);
+
+	const payoutModule = new AdminModule(feePayerKeypair, ownerKeypair, authorityKeypair, mintAccount, gameTokenAccount, gameAccount);
+	const playerModule = new PlayerModule(feePayerKeypair, ownerKeypair, authorityKeypair, mintAccount, gameTokenAccount, gameAccount);
+	return {
+		payoutModule,
+		playerModule,
+	};
+}
+
+async function start2() {
 	const feePayerKeypair = getPayerKeypair();
 	const ownerKeypair = feePayerKeypair;
 	const authorityKeypair = feePayerKeypair;
@@ -37,13 +91,13 @@ async function start() {
 	const playerTwoAccount = await createPlayerAccount(playerTwoKeypair);
 
 	await registerPlayer(playerOneKeypair, playerOneAccount, gameAccount, playerOneKeypair);
-	await registerPlayer(playerTwoKeypair, playerTwoAccount, gameAccount, playerTwoKeypair, playerOneAccount);
+	await registerPlayer(playerTwoKeypair, playerTwoAccount, gameAccount, playerTwoKeypair, playerOneAccount.publicKey);
 
 	await addReward(100, ownerKeypair, ownerKeypair, gameAccount, playerTwoAccount, playerOneAccount);
 	await addReward(100, ownerKeypair, ownerKeypair, gameAccount, playerOneAccount);
 
-	// const playerOneTokenAccount = await createTokenAccount(mintAccount, playerOneKeypair, playerOneKeypair);
-	// await claimReward(playerOneKeypair, gameAccount, playerOneAccount, gameTokenAccount, playerOneTokenAccount);
+	const playerOneTokenAccount = await createTokenAccount(mintAccount, playerOneKeypair, playerOneKeypair);
+	await claimReward(playerOneKeypair, gameAccount, playerOneAccount, gameTokenAccount, playerOneTokenAccount);
 
 	const [playerOneAccountInfo, playerTwoAccountInfo] = await Promise.all([
 		connection.getAccountInfo(playerOneAccount.publicKey),
@@ -68,8 +122,8 @@ async function start() {
 		console.log('owner', playerTwoState.owner.toBase58());
 	}
 
-	// const playerOneTokenAccountInfo = await connection.getParsedAccountInfo(playerOneTokenAccount.publicKey);
-	// console.log(toJSONStringAndBeautify(playerOneTokenAccountInfo.value));
+	const playerOneTokenAccountInfo = await connection.getParsedAccountInfo(playerOneTokenAccount.publicKey);
+	console.log(toJSONStringAndBeautify(playerOneTokenAccountInfo.value));
 }
 
 start()

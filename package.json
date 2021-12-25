@@ -7,7 +7,7 @@
         "new-build:program": "rm -Rf ./src/program/target/deploy/learn_solana-keypair.json && npm run build:program",
         "build:program": "cargo build-bpf --manifest-path=./src/program/Cargo.toml",
         "test:program": "cargo test-bpf --manifest-path=./src/program/Cargo.toml",
-        "deploy:program:local": "solana program deploy --config id.json --url localhost src/program/target/deploy/learn_solana.so"
+        "deploy:program": "solana program deploy --config id.json --url localhost src/program/target/deploy/learn_solana.so"
     },
     "keywords": [],
     "author": "",
@@ -15,8 +15,10 @@
     "dependencies": {
         "@solana/spl-token": "^0.1.8",
         "@solana/web3.js": "^1.31.0",
+        "@types/prompt-sync": "^4.1.1",
         "bn.js": "^5.2.0",
         "borsh": "^0.7.0",
+        "prompt-sync": "^4.2.0",
         "yaml": "^1.10.2"
     }
 }
