@@ -24,18 +24,24 @@ import { Tag } from './schema/tag';
 // 4-  []         - The PDA, owner (in term of token, not account owner) of token account
 // 5 - [writable] - The player token account
 // 6 - []         - The token program
-export async function claimReward(playerKeypair: Keypair, programAccount: Keypair, playerAccount: Keypair, gameTokenAccount: Keypair, playerTokenAccount: Keypair) {
+export async function claimReward(
+	playerKeypair: Keypair,
+	programAccountPubkey: PublicKey,
+	playerAccountPubkey: PublicKey,
+	gameTokenAccountPubkey: PublicKey,
+	playerTokenAccountPubkey: PublicKey,
+) {
 	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const [PDA] = await PublicKey.findProgramAddress([Buffer.from(PDA_SEED)], programId);
 	const transaction = new Transaction().add(
 		new TransactionInstruction({
 			keys: [
 				{ isSigner: true, isWritable: false, pubkey: playerKeypair.publicKey },
-				{ isSigner: false, isWritable: true, pubkey: programAccount.publicKey },
-				{ isSigner: false, isWritable: true, pubkey: playerAccount.publicKey },
-				{ isSigner: false, isWritable: true, pubkey: gameTokenAccount.publicKey },
+				{ isSigner: false, isWritable: true, pubkey: programAccountPubkey },
+				{ isSigner: false, isWritable: true, pubkey: playerAccountPubkey },
+				{ isSigner: false, isWritable: true, pubkey: gameTokenAccountPubkey },
 				{ isSigner: false, isWritable: false, pubkey: PDA },
-				{ isSigner: false, isWritable: true, pubkey: playerTokenAccount.publicKey },
+				{ isSigner: false, isWritable: true, pubkey: playerTokenAccountPubkey },
 				{ isSigner: false, isWritable: false, pubkey: SplToken.TOKEN_PROGRAM_ID },
 			],
 			programId,
@@ -58,19 +64,19 @@ export async function addReward(
 	rewardAmountInSol: number,
 	feePayerKeypair: Keypair,
 	adminKeypair: Keypair,
-	programAccount: Keypair,
-	playerAccount: Keypair,
-	playerUplineAccount?: Keypair,
+	programAccountPubkey: PublicKey,
+	playerAccountPubkey: PublicKey,
+	playerUplineAccountPubkey?: PublicKey,
 ) {
 	rewardAmountInSol = rewardAmountInSol * LAMPORTS_PER_SOL;
 	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const keys: AccountMeta[] = [
 		{ isSigner: true, isWritable: false, pubkey: adminKeypair.publicKey },
-		{ isSigner: false, isWritable: true, pubkey: programAccount.publicKey },
-		{ isSigner: false, isWritable: true, pubkey: playerAccount.publicKey },
+		{ isSigner: false, isWritable: true, pubkey: programAccountPubkey },
+		{ isSigner: false, isWritable: true, pubkey: playerAccountPubkey },
 	];
-	if (playerUplineAccount) {
-		keys.push({ isSigner: false, isWritable: true, pubkey: playerUplineAccount.publicKey });
+	if (playerUplineAccountPubkey) {
+		keys.push({ isSigner: false, isWritable: true, pubkey: playerUplineAccountPubkey });
 	}
 	const transaction = new Transaction().add(
 		new TransactionInstruction({
@@ -92,14 +98,14 @@ export async function addReward(
 // 1 - [writable] - Program account
 // 2 - [writable] - An token account created by the admin, and pre-funded
 // 3 - []         - The token program
-export async function initializeGame(tokenAccountKeypair: Keypair, adminKeypair: Keypair, gameAccountKeypair: Keypair, feePayerKeypair: Keypair) {
+export async function initializeGame(tokenAccountPublicKey: PublicKey, adminKeypair: Keypair, gameAccountPubkey: PublicKey, feePayerKeypair: Keypair) {
 	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const transaction = new Transaction().add(
 		new TransactionInstruction({
 			keys: [
 				{ isSigner: true, isWritable: false, pubkey: adminKeypair.publicKey },
-				{ isSigner: false, isWritable: true, pubkey: gameAccountKeypair.publicKey },
-				{ isSigner: false, isWritable: true, pubkey: tokenAccountKeypair.publicKey },
+				{ isSigner: false, isWritable: true, pubkey: gameAccountPubkey },
+				{ isSigner: false, isWritable: true, pubkey: tokenAccountPublicKey },
 				{ isSigner: false, isWritable: false, pubkey: SplToken.TOKEN_PROGRAM_ID },
 			],
 			programId,
@@ -118,15 +124,15 @@ export async function initializeGame(tokenAccountKeypair: Keypair, adminKeypair:
 // 1 - [writable] - The player account for the program
 // 2 - []         - The program account
 // 3 - []         - The upline player account for the program
-export async function registerPlayer(playerKeypair: Keypair, playerAccount: Keypair, programAccount: Keypair, feePayerKeypair: Keypair, uplinePubkey?: PublicKey) {
+export async function registerPlayer(playerKeypair: Keypair, playerAccountPubkey: PublicKey, programAccountPubkey: PublicKey, feePayerKeypair: Keypair, uplinePubkey?: PublicKey) {
 	const programId = (await getDeployedProgramKeypairOrThrow()).publicKey;
 	const playerRegisterInstruction: IPlayerRegisterIx = {
 		tag: Tag.Register,
 	};
 	const keys: AccountMeta[] = [
 		{ isSigner: true, isWritable: false, pubkey: playerKeypair.publicKey },
-		{ isSigner: false, isWritable: true, pubkey: playerAccount.publicKey },
-		{ isSigner: false, isWritable: false, pubkey: programAccount.publicKey },
+		{ isSigner: false, isWritable: true, pubkey: playerAccountPubkey },
+		{ isSigner: false, isWritable: false, pubkey: programAccountPubkey },
 	];
 	if (uplinePubkey) {
 		keys.push({ isSigner: false, isWritable: false, pubkey: uplinePubkey });
