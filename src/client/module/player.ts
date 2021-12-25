@@ -136,7 +136,7 @@ async function claim(players: Player[], gameAccountPubkey: PublicKey, gameTokenA
 			console.log(`${i + 1}. ${players[i].account.publicKey.toBase58()}`);
 		}
 		console.log('0 - Back');
-		const choice = Number(prompt('Select the player to claim reward'));
+		const choice = Number(prompt('Select the player to claim reward: '));
 		if (choice >= 1 && choice <= players.length) {
 			const player = players[choice - 1];
 			const playerAccountInfo = await connection.getAccountInfo(player.account.publicKey);

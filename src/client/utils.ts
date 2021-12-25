@@ -1,7 +1,9 @@
 import * as SplToken from '@solana/spl-token';
 import { AccountMeta, Keypair, LAMPORTS_PER_SOL, PublicKey, sendAndConfirmTransaction, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
 import * as fs from 'fs';
+import os from 'os';
 import * as path from 'path';
+import yaml from 'yaml';
 import { connection, PDA_SEED, programKeypairPath } from './config';
 import { SchemaBuilder, SchemaData } from './schema/builder';
 import {
@@ -17,17 +19,22 @@ import {
 import { GAME_STATE_BYTE, PLAYER_STATE_BYTE } from './schema/states';
 import { Tag } from './schema/tag';
 
-export async function requestAirdropIfInsufficientBalance(feePayerKeypair: Keypair, signatureCount: number, bytes?: number) {
+export async function requestAirdropIfInsufficientBalance(feePayerKeypair: Keypair, signatureCount: number, bytes?: number[]) {
 	const feePayerBalance = await connection.getBalance(feePayerKeypair.publicKey);
 	const { feeCalculator } = await connection.getRecentBlockhash();
 	let fee = 0;
 	if (bytes) {
-		fee += await connection.getMinimumBalanceForRentExemption(bytes);
+		for (const byte of bytes) {
+			fee += await connection.getMinimumBalanceForRentExemption(byte);
+		}
 	}
 	fee += feeCalculator.lamportsPerSignature * signatureCount;
 	console.log('Estimated fee', fee / LAMPORTS_PER_SOL);
+	console.log(feePayerKeypair.publicKey.toBase58(), feePayerBalance / LAMPORTS_PER_SOL + ' SOL');
 	if (feePayerBalance <= fee) {
-		await connection.requestAirdrop(feePayerKeypair.publicKey, fee);
+		const signature = await connection.requestAirdrop(feePayerKeypair.publicKey, fee);
+		console.log('Airdrop transaction', signature);
+		await connection.confirmTransaction(signature);
 	}
 }
 
@@ -190,7 +197,7 @@ export async function createPlayerAccount(feePayerKeypair: Keypair): Promise<Key
 			programId,
 		}),
 	);
-	await requestAirdropIfInsufficientBalance(feePayerKeypair, 1, PLAYER_STATE_BYTE);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 1, [PLAYER_STATE_BYTE]);
 	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, playerAccount]);
 	console.log('Player account created', transactionSignature);
 	return playerAccount;
@@ -209,7 +216,7 @@ export async function createGameAccount(feePayerKeypair: Keypair): Promise<Keypa
 			programId,
 		}),
 	);
-	await requestAirdropIfInsufficientBalance(feePayerKeypair, 2, GAME_STATE_BYTE);
+	await requestAirdropIfInsufficientBalance(feePayerKeypair, 2, [GAME_STATE_BYTE]);
 	const transactionSignature = await sendAndConfirmTransaction(connection, transaction, [feePayerKeypair, gameAccount]);
 	console.log('Game account created', transactionSignature);
 	return gameAccount;
@@ -220,7 +227,10 @@ export function toJSONStringAndBeautify(obj: any): string {
 }
 
 export function getPayerKeypair(): Keypair {
-	const privateKeyString = fs.readFileSync(path.join(__dirname, '..', '..', 'id.json'), { encoding: 'utf-8' });
+	const CONFIG_FILE_PATH = path.resolve(os.homedir(), '.config', 'solana', 'cli', 'config.yml');
+	const configYml = fs.readFileSync(CONFIG_FILE_PATH, { encoding: 'utf8' });
+	const config = yaml.parse(configYml);
+	const privateKeyString = fs.readFileSync(config.keypair_path, { encoding: 'utf-8' });
 	const privateKey = Uint8Array.from(JSON.parse(privateKeyString));
 	return Keypair.fromSecretKey(privateKey);
 }

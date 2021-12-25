@@ -4,10 +4,12 @@
     "description": "",
     "main": "index.js",
     "scripts": {
-        "new-build:program": "rm -Rf ./src/program/target/deploy/learn_solana-keypair.json && npm run build:program",
-        "build:program": "cargo build-bpf --manifest-path=./src/program/Cargo.toml",
+        "start": "NODE_ENV=local npx ts-node src/client/main.ts",
+        "start:devnet": "NODE_ENV=devnet npx ts-node src/client/main.ts",
+        "build:program": "rm -Rf ./src/program/target/deploy/learn_solana-keypair.json && cargo build-bpf --manifest-path=./src/program/Cargo.toml",
         "test:program": "cargo test-bpf --manifest-path=./src/program/Cargo.toml",
-        "deploy:program": "solana program deploy --config id.json --url localhost src/program/target/deploy/learn_solana.so"
+        "deploy:program": "NODE_ENV=local npx ts-node src/script/deploy.ts",
+        "deploy:program:devnet": "NODE_ENV=devnet npx ts-node src/script/deploy.ts"
     },
     "keywords": [],
     "author": "",
