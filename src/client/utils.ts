@@ -29,8 +29,8 @@ export async function requestAirdropIfInsufficientBalance(feePayerKeypair: Keypa
 		}
 	}
 	fee += feeCalculator.lamportsPerSignature * signatureCount;
-	console.log('Estimated fee', fee / LAMPORTS_PER_SOL);
-	console.log(feePayerKeypair.publicKey.toBase58(), feePayerBalance / LAMPORTS_PER_SOL + ' SOL');
+	// console.log('Estimated fee', fee / LAMPORTS_PER_SOL);
+	// console.log(feePayerKeypair.publicKey.toBase58(), feePayerBalance / LAMPORTS_PER_SOL + ' SOL');
 	if (feePayerBalance <= fee) {
 		const signature = await connection.requestAirdrop(feePayerKeypair.publicKey, fee);
 		console.log('Airdrop transaction', signature);

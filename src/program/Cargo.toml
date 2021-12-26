@@ -16,4 +16,5 @@ thiserror = "1.0.30"
 no-entrypoint = []
 
 [lib]
+name = "learn_solana"
 crate-type = ["cdylib", "lib"]
