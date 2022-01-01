@@ -46,6 +46,14 @@ pub enum Command {
 }
 
 impl Command {
+    // Self = Type of the current object, which is Command enum
+    // &self = short form of self: &Self
+    // See https://stackoverflow.com/questions/32304595/whats-the-difference-between-self-and-self
+    // @todo
+    pub fn pack(&self) -> Vec<u8> {
+        return vec![0];
+    }
+
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         // Get the first byte, which = command user wish to execute
         let (tag, rest) = input
