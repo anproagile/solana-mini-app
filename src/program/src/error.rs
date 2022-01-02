@@ -1,14 +1,15 @@
-use solana_program::program_error::ProgramError;
+use num_derive::FromPrimitive;
+use solana_program::{decode_error::DecodeError, program_error::ProgramError};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
 pub enum CommandError {
     // Invalid command from instruction
     #[error("Invalid command")]
     InvalidCommand,
 }
 
-#[derive(Error, Debug)]
+#[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
 pub enum GameError {
     // The program account already initialized
     #[error("Program already initialized")]
@@ -41,5 +42,17 @@ impl From<GameError> for ProgramError {
 impl From<CommandError> for ProgramError {
     fn from(e: CommandError) -> Self {
         ProgramError::Custom(e as u32)
+    }
+}
+
+impl<T> DecodeError<T> for CommandError {
+    fn type_of() -> &'static str {
+        "CommandError"
+    }
+}
+
+impl<T> DecodeError<T> for GameError {
+    fn type_of() -> &'static str {
+        "GameError"
     }
 }

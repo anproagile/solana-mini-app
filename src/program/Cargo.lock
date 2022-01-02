@@ -1109,6 +1109,8 @@ version = "0.1.0"
 dependencies = [
  "arrayref",
  "borsh",
+ "num-derive",
+ "num-traits",
  "solana-program",
  "solana-program-test",
  "solana-sdk",
