@@ -36,7 +36,7 @@ impl Processor {
     }
 
     // 0 - [signer]   - The player (holder) account
-    // 1 - [writable] - Program account
+    // 1 - []         - Program account
     // 2 - [writable] - The player program account
     // 3 - []         - The token account of the current program
     // 4-  []         - The PDA, owner (in term of token, not account owner) of token account
@@ -140,7 +140,7 @@ impl Processor {
     }
 
     // 0 - [signer]   - The admin (holder) account
-    // 1 - [writable] - Program account
+    // 1 - []         - Program account
     // 2 - [writable] - The player program account
     // 3 - [writable] - The player upline program account
     pub fn process_add_reward(
