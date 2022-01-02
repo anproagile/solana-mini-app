@@ -64,23 +64,52 @@ async fn claim_reward() {
         .await
         .unwrap();
 
+    // Register player one
     let transaction = build_register_player_transaction(
         &payer,
         &player_one_holder_keypair,
         &player_one_account_keypair,
         &program_account_keypair,
-        Some(&player_two_holder_keypair),
-        Some(&player_two_account_keypair),
+        None,
         program_id,
         recent_blockhash,
     );
     banks_client.process_transaction(transaction).await.unwrap();
 
+    // Register player two, with player one as upline
+    let transaction = build_register_player_transaction(
+        &payer,
+        &player_two_holder_keypair,
+        &player_two_account_keypair,
+        &program_account_keypair,
+        Some(&player_one_account_keypair),
+        program_id,
+        recent_blockhash,
+    );
+    banks_client.process_transaction(transaction).await.unwrap();
+
+    // Test add reward to player two with admin
+    let add_reward_transaction = build_add_reward_transaction(
+        &admin_account_keypair,
+        &program_account_keypair,
+        &player_two_account_keypair,
+        Some(&player_one_account_keypair),
+        program_id,
+        100,
+        &payer,
+        recent_blockhash,
+    );
+    banks_client
+        .process_transaction(add_reward_transaction)
+        .await
+        .unwrap();
+
+    // Test add reward to player one
     let add_reward_transaction = build_add_reward_transaction(
         &admin_account_keypair,
         &program_account_keypair,
         &player_one_account_keypair,
-        &player_two_account_keypair,
+        None,
         program_id,
         100,
         &payer,
@@ -146,7 +175,7 @@ async fn claim_reward() {
         Some(account) => {
             let player_one_token_account_state =
                 spl_token::state::Account::unpack(&account.data).unwrap();
-            assert_eq!(player_one_token_account_state.amount, 110); // 10% from player two
+            assert_eq!(player_one_token_account_state.amount, 110); // 100 + 10% from player two
         }
         _ => {}
     }
@@ -193,14 +222,25 @@ async fn add_reward() {
         .process_transaction(create_player_account_transaction)
         .await
         .unwrap();
-
+    // Register player one
     let transaction = build_register_player_transaction(
         &payer,
         &player_one_holder_keypair,
         &player_one_account_keypair,
         &program_account_keypair,
-        Some(&player_two_holder_keypair),
-        Some(&player_two_account_keypair),
+        None,
+        program_id,
+        recent_blockhash,
+    );
+    banks_client.process_transaction(transaction).await.unwrap();
+
+    // Register player two, with player one as upline
+    let transaction = build_register_player_transaction(
+        &payer,
+        &player_two_holder_keypair,
+        &player_two_account_keypair,
+        &program_account_keypair,
+        Some(&player_one_account_keypair),
         program_id,
         recent_blockhash,
     );
@@ -212,7 +252,7 @@ async fn add_reward() {
         &fake_admin_account_keypair,
         &program_account_keypair,
         &player_one_account_keypair,
-        &player_two_account_keypair,
+        None,
         program_id,
         100,
         &payer,
@@ -237,7 +277,7 @@ async fn add_reward() {
         &admin_account_keypair,
         &program_account_keypair,
         &Keypair::new(),
-        &player_two_account_keypair,
+        None,
         program_id,
         100,
         &payer,
@@ -254,12 +294,56 @@ async fn add_reward() {
     };
     // End
 
-    // Test add reward with admin
+    // Test add reward with non-exists upline account
     let add_reward_transaction = build_add_reward_transaction(
         &admin_account_keypair,
         &program_account_keypair,
-        &player_one_account_keypair,
         &player_two_account_keypair,
+        Some(&Keypair::new()),
+        program_id,
+        100,
+        &payer,
+        recent_blockhash,
+    );
+    let result = banks_client
+        .process_transaction(add_reward_transaction)
+        .await;
+    match result {
+        Ok(()) => {}
+        Err(error) => {
+            assert_eq!(error.to_string().contains("incorrect program id"), true);
+        }
+    };
+    // End
+
+    // Test add reward to invalid upline account
+    let add_reward_transaction = build_add_reward_transaction(
+        &admin_account_keypair,
+        &program_account_keypair,
+        &player_two_account_keypair,
+        Some(&player_two_account_keypair),
+        program_id,
+        100,
+        &payer,
+        recent_blockhash,
+    );
+    let result = banks_client
+        .process_transaction(add_reward_transaction)
+        .await;
+    match result {
+        Ok(()) => {}
+        Err(error) => {
+            assert_eq!(error.to_string().contains("custom program error"), true);
+        }
+    };
+    // End
+
+    // Test add reward to player two with admin
+    let add_reward_transaction = build_add_reward_transaction(
+        &admin_account_keypair,
+        &program_account_keypair,
+        &player_two_account_keypair,
+        Some(&player_one_account_keypair),
         program_id,
         100,
         &payer,
@@ -277,7 +361,7 @@ async fn add_reward() {
     match player_one_account {
         Some(account) => {
             let player_one_state = Player::unpack(&account.data).unwrap();
-            assert_eq!(player_one_state.reward_to_claim, 110); // 10% from player two
+            assert_eq!(player_one_state.reward_to_claim, 10); // 10% from player two
         }
         _ => {} // Unreachable
     };
@@ -290,6 +374,34 @@ async fn add_reward() {
         Some(account) => {
             let player_two_state = Player::unpack(&account.data).unwrap();
             assert_eq!(player_two_state.reward_to_claim, 90);
+        }
+        _ => {} // Unreachable
+    };
+
+    // Test add reward to player one
+    let add_reward_transaction = build_add_reward_transaction(
+        &admin_account_keypair,
+        &program_account_keypair,
+        &player_one_account_keypair,
+        None,
+        program_id,
+        100,
+        &payer,
+        recent_blockhash,
+    );
+    banks_client
+        .process_transaction(add_reward_transaction)
+        .await
+        .unwrap();
+
+    let player_one_account = banks_client
+        .get_account(player_one_account_keypair.pubkey())
+        .await
+        .unwrap();
+    match player_one_account {
+        Some(account) => {
+            let player_one_state = Player::unpack(&account.data).unwrap();
+            assert_eq!(player_one_state.reward_to_claim, 110); // 100 + 10% from player two
         }
         _ => {} // Unreachable
     };
@@ -344,7 +456,6 @@ async fn register_player() {
         &Keypair::new(),
         &program_account_keypair,
         None,
-        None,
         program_id,
         recent_blockhash,
     );
@@ -363,7 +474,6 @@ async fn register_player() {
         &player_one_holder_keypair,
         &player_one_account_keypair,
         &Keypair::new(),
-        None,
         None,
         program_id,
         recent_blockhash,
@@ -384,7 +494,6 @@ async fn register_player() {
         &player_one_account_keypair,
         &program_account_keypair,
         Some(&Keypair::new()),
-        Some(&Keypair::new()),
         program_id,
         recent_blockhash,
     );
@@ -398,19 +507,15 @@ async fn register_player() {
     // End
 
     // Test register self as upline
-    let register_player_instruction = [Instruction {
+    let transaction = build_register_player_transaction(
+        &payer,
+        &player_one_holder_keypair,
+        &player_one_account_keypair,
+        &program_account_keypair,
+        Some(&player_one_account_keypair),
         program_id,
-        accounts: vec![
-            AccountMeta::new_readonly(player_one_holder_keypair.pubkey(), true),
-            AccountMeta::new(player_one_account_keypair.pubkey(), false),
-            AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
-            AccountMeta::new_readonly(player_one_account_keypair.pubkey(), false),
-        ],
-        data: vec![1_u8], // Tag 1
-    }];
-    let mut transaction =
-        Transaction::new_with_payer(&register_player_instruction, Some(&payer.pubkey()));
-    transaction.partial_sign(&[&payer, &player_one_holder_keypair], recent_blockhash);
+        recent_blockhash,
+    );
     let result = banks_client.process_transaction(transaction).await;
     match result {
         Ok(()) => {}
@@ -422,13 +527,13 @@ async fn register_player() {
     // End
 
     // Test register player
+    // Register player one
     let transaction = build_register_player_transaction(
         &payer,
         &player_one_holder_keypair,
         &player_one_account_keypair,
         &program_account_keypair,
-        Some(&player_two_holder_keypair),
-        Some(&player_two_account_keypair),
+        None,
         program_id,
         recent_blockhash,
     );
@@ -449,6 +554,18 @@ async fn register_player() {
             panic!("Player one account not found");
         }
     };
+
+    // Register player two, with player one as upline
+    let transaction = build_register_player_transaction(
+        &payer,
+        &player_two_holder_keypair,
+        &player_two_account_keypair,
+        &program_account_keypair,
+        Some(&player_one_account_keypair),
+        program_id,
+        recent_blockhash,
+    );
+    let result = banks_client.process_transaction(transaction).await;
 
     let player_two_account = banks_client
         .get_account(player_two_account_keypair.pubkey())
@@ -490,6 +607,7 @@ async fn init_instruction() {
         payer,
         recent_blockhash,
     ) = setup().await;
+
     // Test init with invalid program_account
     let invalid_program_account_keypair = Keypair::new();
     let init_instruction_transaction = build_init_instruction_transaction(
@@ -603,8 +721,8 @@ fn build_claim_reward_transaction(
 fn build_add_reward_transaction(
     admin_account_keypair: &Keypair,
     program_account_keypair: &Keypair,
-    player_one_account_keypair: &Keypair,
-    player_two_account_keypair: &Keypair,
+    player_account_keypair: &Keypair,
+    upline_account_keypair: Option<&Keypair>,
     program_id: Pubkey,
     amount: u64,
     payer: &Keypair,
@@ -612,91 +730,75 @@ fn build_add_reward_transaction(
 ) -> Transaction {
     let mut add_reward_data = vec![2_u8]; // Tag = 2
     add_reward_data.extend_from_slice(&u64::to_le_bytes(amount)); // reward
-    let add_reward_instruction = [
-        // Add reward to player one
-        Instruction {
+    if upline_account_keypair.is_some() {
+        let add_reward_instruction = [Instruction {
             program_id,
             accounts: vec![
                 AccountMeta::new_readonly(admin_account_keypair.pubkey(), true),
                 AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
-                AccountMeta::new(player_one_account_keypair.pubkey(), false),
+                AccountMeta::new(player_account_keypair.pubkey(), false),
+                AccountMeta::new(upline_account_keypair.unwrap().pubkey(), false),
             ],
             data: add_reward_data.clone(),
-        },
-        // Add reward to player two
-        Instruction {
+        }];
+        let mut transaction =
+            Transaction::new_with_payer(&add_reward_instruction, Some(&payer.pubkey()));
+        transaction.partial_sign(&[payer, admin_account_keypair], recent_blockhash);
+        transaction
+    } else {
+        let add_reward_instruction = [Instruction {
             program_id,
             accounts: vec![
                 AccountMeta::new_readonly(admin_account_keypair.pubkey(), true),
                 AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
-                AccountMeta::new(player_two_account_keypair.pubkey(), false),
-                AccountMeta::new(player_one_account_keypair.pubkey(), false),
+                AccountMeta::new(player_account_keypair.pubkey(), false),
             ],
             data: add_reward_data.clone(),
-        },
-    ];
-    let mut transaction =
-        Transaction::new_with_payer(&add_reward_instruction, Some(&payer.pubkey()));
-    transaction.partial_sign(&[payer, admin_account_keypair], recent_blockhash);
-    transaction
+        }];
+        let mut transaction =
+            Transaction::new_with_payer(&add_reward_instruction, Some(&payer.pubkey()));
+        transaction.partial_sign(&[payer, admin_account_keypair], recent_blockhash);
+        transaction
+    }
 }
 
 fn build_register_player_transaction(
     payer: &Keypair,
-    player_one_holder_keypair: &Keypair,
-    player_one_account_keypair: &Keypair,
+    player_holder_keypair: &Keypair,
+    player_account_keypair: &Keypair,
     program_account_keypair: &Keypair,
-    player_two_holder_keypair: Option<&Keypair>,
-    player_two_account_keypair: Option<&Keypair>,
+    upline_account_keypair: Option<&Keypair>,
     program_id: Pubkey,
     recent_blockhash: Hash,
 ) -> Transaction {
-    if player_two_holder_keypair.is_some() {
-        let register_player_instruction = [
-            Instruction {
-                program_id,
-                accounts: vec![
-                    AccountMeta::new_readonly(player_one_holder_keypair.pubkey(), true),
-                    AccountMeta::new(player_one_account_keypair.pubkey(), false),
-                    AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
-                ],
-                data: vec![1_u8], // Tag 1
-            },
-            Instruction {
-                program_id,
-                accounts: vec![
-                    AccountMeta::new_readonly(player_two_holder_keypair.unwrap().pubkey(), true),
-                    AccountMeta::new(player_two_account_keypair.unwrap().pubkey(), false),
-                    AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
-                    AccountMeta::new_readonly(player_one_account_keypair.pubkey(), false), //upline
-                ],
-                data: vec![1_u8], // Tag 1
-            },
-        ];
+    if upline_account_keypair.is_some() {
+        let register_player_instruction = [Instruction {
+            program_id,
+            accounts: vec![
+                AccountMeta::new_readonly(player_holder_keypair.pubkey(), true),
+                AccountMeta::new(player_account_keypair.pubkey(), false),
+                AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
+                AccountMeta::new_readonly(upline_account_keypair.unwrap().pubkey(), false), //upline
+            ],
+            data: vec![1_u8], // Tag 1
+        }];
         let mut transaction =
             Transaction::new_with_payer(&register_player_instruction, Some(&payer.pubkey()));
-        transaction.partial_sign(
-            &[
-                payer,
-                player_one_holder_keypair,
-                player_two_holder_keypair.unwrap(),
-            ],
-            recent_blockhash,
-        );
+        transaction.partial_sign(&[payer, player_holder_keypair], recent_blockhash);
         transaction
     } else {
         let register_player_instruction = [Instruction {
             program_id,
             accounts: vec![
-                AccountMeta::new_readonly(player_one_holder_keypair.pubkey(), true),
-                AccountMeta::new(player_one_account_keypair.pubkey(), false),
+                AccountMeta::new_readonly(player_holder_keypair.pubkey(), true),
+                AccountMeta::new(player_account_keypair.pubkey(), false),
                 AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
             ],
             data: vec![1_u8], // Tag 1
         }];
         let mut transaction =
             Transaction::new_with_payer(&register_player_instruction, Some(&payer.pubkey()));
-        transaction.partial_sign(&[payer, player_one_holder_keypair], recent_blockhash);
+        transaction.partial_sign(&[payer, player_holder_keypair], recent_blockhash);
         transaction
     }
 }
@@ -827,19 +929,30 @@ async fn setup() -> (
         .await
         .unwrap();
 
-    // Create and initialize player 1 and 2 token account
+    // Create and initialize player 1 token account
     banks_client
         .process_transaction(build_create_and_init_player_token_account(
             &payer,
             &player_one_token_account_keypair,
-            &player_two_token_account_keypair,
-            &mint_account_keypair,
             &player_one_holder_keypair,
-            &player_two_holder_keypair,
+            &mint_account_keypair,
             recent_blockhash,
         ))
         .await
         .unwrap();
+
+    // Create and initialize player 2 token account
+    banks_client
+        .process_transaction(build_create_and_init_player_token_account(
+            &payer,
+            &player_two_token_account_keypair,
+            &player_two_holder_keypair,
+            &mint_account_keypair,
+            recent_blockhash,
+        ))
+        .await
+        .unwrap();
+
     (
         mint_account_keypair,
         admin_account_keypair,
@@ -860,56 +973,30 @@ async fn setup() -> (
 
 fn build_create_and_init_player_token_account(
     payer: &Keypair,
-    player_one_token_account_keypair: &Keypair,
-    player_two_token_account_keypair: &Keypair,
+    player_token_account_keypair: &Keypair,
+    player_holder_keypair: &Keypair,
     mint_account_keypair: &Keypair,
-    player_one_holder_keypair: &Keypair,
-    player_two_holder_keypair: &Keypair,
     recent_blockhash: Hash,
 ) -> Transaction {
-    let create_and_init_players_token_account_instruction = [
+    let transaction = [
         system_instruction::create_account(
             &payer.pubkey(),
-            &player_one_token_account_keypair.pubkey(),
-            Rent::default().minimum_balance(spl_token::state::Account::LEN),
-            spl_token::state::Account::LEN.try_into().unwrap(),
-            &spl_token::id(),
-        ),
-        system_instruction::create_account(
-            &payer.pubkey(),
-            &player_two_token_account_keypair.pubkey(),
+            &player_token_account_keypair.pubkey(),
             Rent::default().minimum_balance(spl_token::state::Account::LEN),
             spl_token::state::Account::LEN.try_into().unwrap(),
             &spl_token::id(),
         ),
         initialize_account(
             &spl_token::id(),
-            &player_one_token_account_keypair.pubkey(),
+            &player_token_account_keypair.pubkey(),
             &mint_account_keypair.pubkey(),
-            &player_one_holder_keypair.pubkey(),
-        )
-        .unwrap(),
-        initialize_account(
-            &spl_token::id(),
-            &player_two_token_account_keypair.pubkey(),
-            &mint_account_keypair.pubkey(),
-            &player_two_holder_keypair.pubkey(),
+            &player_holder_keypair.pubkey(),
         )
         .unwrap(),
     ];
 
-    let mut transaction = Transaction::new_with_payer(
-        &create_and_init_players_token_account_instruction,
-        Some(&payer.pubkey()),
-    );
-    transaction.partial_sign(
-        &[
-            payer,
-            player_one_token_account_keypair,
-            player_two_token_account_keypair,
-        ],
-        recent_blockhash,
-    );
+    let mut transaction = Transaction::new_with_payer(&transaction, Some(&payer.pubkey()));
+    transaction.partial_sign(&[payer, player_token_account_keypair], recent_blockhash);
     transaction
 }
 
