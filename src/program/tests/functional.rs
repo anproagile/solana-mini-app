@@ -91,81 +91,65 @@ async fn claim_reward() {
         .await
         .unwrap();
 
-    // let (pda, _nonce) = Pubkey::find_program_address(&["game_seed".as_bytes()], &program_id);
-    // // Test claim player two reward by using player one account
-    // let claim_reward_instruction = [Instruction {
-    //     accounts: vec![
-    //         AccountMeta::new_readonly(player_one_holder_keypair.pubkey(), true),
-    //         AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
-    //         AccountMeta::new(player_two_account_keypair.pubkey(), false), // Claim from player two account
-    //         AccountMeta::new(token_account_keypair.pubkey(), false),
-    //         AccountMeta::new_readonly(pda, false),
-    //         AccountMeta::new(player_one_token_account_keypair.pubkey(), false), // Receive the claimed token using player one token account
-    //         AccountMeta::new_readonly(spl_token::id(), false),
-    //     ],
-    //     program_id,
-    //     data: vec![3_u8], // Tag = 3
-    // }];
+    let (pda, _nonce) = Pubkey::find_program_address(&["game_seed".as_bytes()], &program_id);
+    // Test claim other player reward
+    let transaction = build_claim_reward_transaction(
+        &player_one_holder_keypair,
+        &program_account_keypair,
+        &player_two_account_keypair, // Claim player two reward using player one signature
+        &token_account_keypair,
+        pda,
+        &player_one_token_account_keypair,
+        program_id,
+        &payer,
+        recent_blockhash,
+    );
+    let result = banks_client.process_transaction(transaction).await;
+    match result {
+        Ok(()) => {}
+        Err(e) => {
+            assert_eq!(e.to_string().contains("missing required signature"), true);
+        }
+    };
 
-    // let mut claim_reward_transaction =
-    //     Transaction::new_with_payer(&claim_reward_instruction, Some(&payer.pubkey()));
-    // claim_reward_transaction.partial_sign(&[&payer, &player_one_holder_keypair], recent_blockhash);
-    // let error_result = banks_client
-    //     .process_transaction(claim_reward_transaction)
-    //     .await;
-    // match error_result {
-    //     Ok(()) => {}
-    //     Err(e) => {
-    //         assert_eq!(e.to_string().contains("missing required signature"), true);
-    //     }
-    // }
+    // Test player one claim reward
+    let transaction = build_claim_reward_transaction(
+        &player_one_holder_keypair,
+        &program_account_keypair,
+        &player_one_account_keypair,
+        &token_account_keypair,
+        pda,
+        &player_one_token_account_keypair,
+        program_id,
+        &payer,
+        recent_blockhash,
+    );
+    banks_client.process_transaction(transaction).await.unwrap();
 
-    // // Test player one claim reward
-    // let claim_reward_instruction = [Instruction {
-    //     accounts: vec![
-    //         AccountMeta::new_readonly(player_one_holder_keypair.pubkey(), true),
-    //         AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
-    //         AccountMeta::new(player_one_account_keypair.pubkey(), false),
-    //         AccountMeta::new(token_account_keypair.pubkey(), false),
-    //         AccountMeta::new_readonly(pda, false),
-    //         AccountMeta::new(player_one_token_account_keypair.pubkey(), false),
-    //         AccountMeta::new_readonly(spl_token::id(), false),
-    //     ],
-    //     program_id,
-    //     data: vec![3_u8], // Tag = 3
-    // }];
-    // let mut claim_reward_transaction =
-    //     Transaction::new_with_payer(&claim_reward_instruction, Some(&payer.pubkey()));
-    // claim_reward_transaction.partial_sign(&[&payer, &player_one_holder_keypair], recent_blockhash);
-    // banks_client
-    //     .process_transaction(claim_reward_transaction)
-    //     .await
-    //     .unwrap();
+    let player_one_account = banks_client
+        .get_account(player_one_account_keypair.pubkey())
+        .await
+        .unwrap();
+    match player_one_account {
+        Some(account) => {
+            let player_one_state = Player::unpack(&account.data).unwrap();
+            assert_eq!(player_one_state.reward_to_claim, 0);
+        }
+        _ => {} // Unreachable
+    };
 
-    // let player_one_account = banks_client
-    //     .get_account(player_one_account_keypair.pubkey())
-    //     .await
-    //     .unwrap();
-    // match player_one_account {
-    //     Some(account) => {
-    //         let player_one_state = Player::unpack(&account.data).unwrap();
-    //         assert_eq!(player_one_state.reward_to_claim, 0); // 10% from player two
-    //     }
-    //     _ => {} // Unreachable
-    // };
-
-    // let player_one_token_account = banks_client
-    //     .get_account(player_one_token_account_keypair.pubkey())
-    //     .await
-    //     .unwrap();
-    // match player_one_token_account {
-    //     Some(account) => {
-    //         let player_one_token_account_state =
-    //             spl_token::state::Account::unpack(&account.data).unwrap();
-    //         assert_eq!(player_one_token_account_state.amount, 110);
-    //     }
-    //     _ => {}
-    // }
+    let player_one_token_account = banks_client
+        .get_account(player_one_token_account_keypair.pubkey())
+        .await
+        .unwrap();
+    match player_one_token_account {
+        Some(account) => {
+            let player_one_token_account_state =
+                spl_token::state::Account::unpack(&account.data).unwrap();
+            assert_eq!(player_one_token_account_state.amount, 110); // 10% from player two
+        }
+        _ => {}
+    }
 }
 
 #[tokio::test]
@@ -583,6 +567,37 @@ async fn init_instruction() {
             panic!("Program account not found");
         }
     };
+}
+
+fn build_claim_reward_transaction(
+    player_holder_keypair: &Keypair,
+    program_account_keypair: &Keypair,
+    player_account_keypair: &Keypair,
+    token_account_keypair: &Keypair,
+    pda: Pubkey,
+    player_token_account_keypair: &Keypair,
+    program_id: Pubkey,
+    payer: &Keypair,
+    recent_blockhash: Hash,
+) -> Transaction {
+    let claim_reward_instruction = [Instruction {
+        accounts: vec![
+            AccountMeta::new_readonly(player_holder_keypair.pubkey(), true),
+            AccountMeta::new_readonly(program_account_keypair.pubkey(), false),
+            AccountMeta::new(player_account_keypair.pubkey(), false), // Claim from player two account
+            AccountMeta::new(token_account_keypair.pubkey(), false),
+            AccountMeta::new_readonly(pda, false),
+            AccountMeta::new(player_token_account_keypair.pubkey(), false), // Receive the claimed token using player one token account
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        program_id,
+        data: vec![3_u8], // Tag = 3
+    }];
+
+    let mut transaction =
+        Transaction::new_with_payer(&claim_reward_instruction, Some(&payer.pubkey()));
+    transaction.partial_sign(&[payer, player_holder_keypair], recent_blockhash);
+    transaction
 }
 
 fn build_add_reward_transaction(
